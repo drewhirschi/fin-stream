@@ -18,6 +18,10 @@ async fn main() -> anyhow::Result<()> {
 
     let pool = db::init().await?;
 
+    // Ensure default streams exist on startup
+    db::ensure_trustee_stream(&pool).await?;
+    db::ensure_expenses_stream(&pool).await?;
+
     let state = Arc::new(AppState {
         db: pool,
         sync_status: Mutex::new(None),
