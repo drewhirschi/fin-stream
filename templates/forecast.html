@@ -1,0 +1,469 @@
+{% extends "base.html" %}
+
+{% block nav_forecast %}active{% endblock %}
+
+{% block content %}
+<div class="vault" x-data="forecastApp()" x-init="init()">
+
+    {% if !has_balance %}
+    <!-- No starting balance prompt -->
+    <div class="surface-high p-6 mb-8">
+        <h2 class="text-lg mb-2" style="font-family: var(--font-display)">Set your starting cash balance</h2>
+        <p class="label-dim mb-4">The forecast needs a starting point. Enter your current available cash.</p>
+        <div class="flex gap-3 items-center">
+            <input type="number" step="0.01" placeholder="e.g. 5000.00"
+                   class="px-3 py-2 rounded-lg mono"
+                   style="background: var(--vault-surface-container-lowest); color: var(--vault-on-surface); border: none; outline: none; width: 12rem;"
+                   x-model="cashInput"
+                   @focus="$el.style.background = 'var(--vault-surface-container-highest)'; $el.style.borderBottom = '1px solid var(--vault-primary)'"
+                   @blur="$el.style.background = 'var(--vault-surface-container-lowest)'; $el.style.borderBottom = 'none'">
+            <button class="emerald-pulse px-4 py-2 rounded-lg font-semibold text-sm cursor-pointer"
+                    @click="setCashBalance()">
+                Save
+            </button>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Hero: Cash position at scrubbed date -->
+    <div class="text-center mb-10 pt-4">
+        <div class="label-dim mb-1">Cash position on</div>
+        <div class="mono text-lg" style="color: var(--vault-on-surface)" x-text="scrubberDateFormatted"></div>
+        <div class="hero-number mt-1"
+             :class="heroBalance >= 0 ? 'hero-positive' : 'hero-negative'"
+             x-text="'$' + Math.abs(heroBalance).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})">
+            $0.00
+        </div>
+        <div class="label-dim mt-2" x-show="forecast">
+            <span x-text="forecast?.rows?.length || 0"></span> events in range
+        </div>
+    </div>
+
+    <!-- Scrubber -->
+    <div class="px-4 mb-8">
+        <input type="range"
+               :min="scrubberMin" :max="scrubberMax"
+               x-model.number="scrubberValue"
+               @input="updateHero()"
+               @keydown.left.prevent="scrubberValue = Math.max(scrubberMin, scrubberValue - 1); updateHero()"
+               @keydown.right.prevent="scrubberValue = Math.min(scrubberMax, scrubberValue + 1); updateHero()"
+               @keydown.shift.left.prevent="scrubberValue = Math.max(scrubberMin, scrubberValue - 7); updateHero()"
+               @keydown.shift.right.prevent="scrubberValue = Math.min(scrubberMax, scrubberValue + 7); updateHero()"
+               @keydown.home.prevent="scrubberValue = todayValue; updateHero()">
+        <div class="flex justify-between label-dim mt-2">
+            <span x-text="scrubberMinLabel"></span>
+            <span style="color: var(--vault-primary)">Today</span>
+            <span x-text="scrubberMaxLabel"></span>
+        </div>
+    </div>
+
+    <!-- Add Expense button -->
+    <div class="flex justify-end mb-4 px-4">
+        <button class="emerald-pulse px-4 py-2 rounded-lg font-semibold text-sm cursor-pointer"
+                @click="showAddExpense = true">
+            + Add Expense
+        </button>
+    </div>
+
+    <!-- Add Expense Modal (glassmorphism) -->
+    <template x-if="showAddExpense">
+        <div class="fixed inset-0 z-50 flex items-center justify-center" style="background: rgba(0,0,0,0.5);"
+             @click.self="showAddExpense = false" @keydown.escape.window="showAddExpense = false">
+            <div class="glass shadow-ambient p-6" style="width: 24rem;">
+                <h3 style="font-family: var(--font-display); font-size: 1.125rem; font-weight: 700; margin-bottom: 1rem;">Add Expense</h3>
+                <div class="mb-3">
+                    <label class="label-dim block mb-1">Label</label>
+                    <input type="text" x-model="newExpense.label" placeholder="e.g. Car Insurance"
+                           class="w-full px-3 py-2 rounded-lg" style="background: var(--vault-surface-container-lowest); color: var(--vault-on-surface); border: none; outline: none;">
+                </div>
+                <div class="mb-3">
+                    <label class="label-dim block mb-1">Amount ($)</label>
+                    <input type="number" step="0.01" x-model="newExpense.amount" placeholder="1200.00"
+                           class="w-full px-3 py-2 rounded-lg mono" style="background: var(--vault-surface-container-lowest); color: var(--vault-on-surface); border: none; outline: none;">
+                </div>
+                <div class="mb-4">
+                    <label class="label-dim block mb-1">Date</label>
+                    <input type="date" x-model="newExpense.date"
+                           class="w-full px-3 py-2 rounded-lg mono" style="background: var(--vault-surface-container-lowest); color: var(--vault-on-surface); border: none; outline: none; color-scheme: dark;">
+                </div>
+                <div class="flex gap-2 justify-end">
+                    <button class="px-4 py-2 rounded-lg text-sm cursor-pointer"
+                            style="color: var(--vault-on-surface-variant)"
+                            @click="showAddExpense = false">Cancel</button>
+                    <button class="emerald-pulse px-4 py-2 rounded-lg font-semibold text-sm cursor-pointer"
+                            :disabled="expenseSaving"
+                            @click="saveExpense()">
+                        <span x-show="!expenseSaving">Save</span>
+                        <span x-show="expenseSaving">Saving...</span>
+                    </button>
+                </div>
+                <div x-show="expenseError" class="mt-3 text-sm" style="color: var(--vault-secondary)" x-text="expenseError"></div>
+            </div>
+        </div>
+    </template>
+
+    <!-- Override Popover (glassmorphism) -->
+    <template x-if="selectedEvent">
+        <div class="fixed inset-0 z-50 flex items-center justify-center" style="background: rgba(0,0,0,0.5);"
+             @click.self="selectedEvent = null" @keydown.escape.window="selectedEvent = null">
+            <div class="glass shadow-ambient p-6" style="width: 22rem;">
+                <h3 style="font-family: var(--font-display); font-size: 1.125rem; font-weight: 700; margin-bottom: 0.5rem;">Override Payment Date</h3>
+                <p class="label-dim mb-3" x-text="selectedEvent.label"></p>
+                <div class="flex items-center gap-3 mb-2">
+                    <span class="label-dim">Scheduled:</span>
+                    <span class="mono" x-text="selectedEvent.date"></span>
+                </div>
+                <div class="flex items-center gap-3 mb-2">
+                    <span class="mono" :class="selectedEvent.amount >= 0 ? 'chip-positive' : 'chip-negative'"
+                          x-text="(selectedEvent.amount >= 0 ? '+' : '') + '$' + Math.abs(selectedEvent.amount).toFixed(2)"></span>
+                </div>
+                <template x-if="selectedEvent.status !== 'received'">
+                    <div class="mt-4">
+                        <label class="label-dim block mb-1">New expected date</label>
+                        <input type="date" x-model="overrideDate"
+                               class="w-full px-3 py-2 rounded-lg mono" style="background: var(--vault-surface-container-lowest); color: var(--vault-on-surface); border: none; outline: none; color-scheme: dark;">
+                        <div class="flex gap-2 justify-end mt-4">
+                            <button class="px-4 py-2 rounded-lg text-sm cursor-pointer"
+                                    style="color: var(--vault-on-surface-variant)"
+                                    @click="selectedEvent = null">Cancel</button>
+                            <button class="emerald-pulse px-4 py-2 rounded-lg font-semibold text-sm cursor-pointer"
+                                    :disabled="overrideSaving"
+                                    @click="saveOverride()">
+                                <span x-show="!overrideSaving">Save Override</span>
+                                <span x-show="overrideSaving">Saving...</span>
+                            </button>
+                        </div>
+                        <div x-show="overrideError" class="mt-3 text-sm" style="color: var(--vault-secondary)" x-text="overrideError"></div>
+                    </div>
+                </template>
+                <template x-if="selectedEvent.status === 'received'">
+                    <div class="mt-3">
+                        <p class="label-dim">This payment has been received and cannot be overridden.</p>
+                        <button class="px-4 py-2 rounded-lg text-sm cursor-pointer mt-3"
+                                style="color: var(--vault-on-surface-variant)"
+                                @click="selectedEvent = null">Close</button>
+                    </div>
+                </template>
+            </div>
+        </div>
+    </template>
+
+    <!-- Stream lanes (timeline) -->
+    <template x-if="forecast && forecast.rows.length > 0">
+        <div class="mb-8">
+            <template x-for="(lane, idx) in streamLanes" :key="lane.name">
+                <div class="mb-5">
+                    <div class="flex items-center gap-2 mb-2">
+                        <span class="stream-lane-label" x-text="lane.name"></span>
+                        <span class="label-dim" x-text="lane.events.length + ' events'"></span>
+                    </div>
+                    <div class="stream-lane timeline-container" style="overflow-x: auto;"
+                         :style="'width: ' + timelineWidth + 'px; min-width: 100%'">
+                        <!-- Month markers -->
+                        <template x-for="month in monthMarkers" :key="month.label">
+                            <div class="month-marker absolute top-0 bottom-0"
+                                 :style="'left: ' + month.x + 'px'">
+                                <span class="month-label absolute" style="top: -1.25rem" x-text="month.label"></span>
+                            </div>
+                        </template>
+
+                        <!-- Event dots -->
+                        <template x-for="event in lane.events" :key="event.event_id">
+                            <div class="dot"
+                                 :class="{
+                                     'dot-inflow': event.amount > 0,
+                                     'dot-outflow': event.amount < 0,
+                                     'dot-delinquent': event.is_delinquent === 1
+                                 }"
+                                 :style="'left: ' + getEventX(event.date) + 'px'"
+                                 :title="event.label + ': $' + Math.abs(event.amount).toFixed(2) + ' on ' + event.date"
+                                 @click="selectEvent(event)">
+                            </div>
+                        </template>
+
+                        <!-- Scrubber line -->
+                        <div class="scrubber-line" :style="'left: ' + scrubberX + 'px'"></div>
+                    </div>
+                </div>
+            </template>
+        </div>
+    </template>
+
+    <!-- Events table -->
+    <template x-if="forecast && forecast.rows.length > 0">
+        <div class="surface-low p-4 overflow-x-auto">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Source</th>
+                        <th>Amount</th>
+                        <th>Balance</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <template x-for="row in forecast.rows" :key="row.event_id">
+                        <tr :style="row.date > scrubberDateISO ? 'opacity: 0.35' : ''">
+                            <td class="mono" x-text="row.date"></td>
+                            <td>
+                                <span x-text="row.label || '-'"></span>
+                                <template x-if="row.is_delinquent === 1">
+                                    <span class="chip-negative ml-2" style="font-size: 0.7rem; padding: 0 0.4rem;">Late</span>
+                                </template>
+                            </td>
+                            <td class="mono">
+                                <span :class="row.amount >= 0 ? 'chip-positive' : 'chip-negative'"
+                                      x-text="(row.amount >= 0 ? '+' : '') + '$' + Math.abs(row.amount).toFixed(2)"></span>
+                            </td>
+                            <td class="mono" :style="row.running_balance < 0 ? 'color: var(--vault-secondary)' : ''"
+                                x-text="'$' + row.running_balance.toLocaleString('en-US', {minimumFractionDigits: 2})"></td>
+                            <td>
+                                <span class="label-dim" x-text="row.status"></span>
+                            </td>
+                        </tr>
+                    </template>
+                </tbody>
+            </table>
+        </div>
+    </template>
+
+    <!-- Empty state -->
+    <template x-if="forecast && forecast.rows.length === 0">
+        <div class="surface-high p-8 text-center">
+            <p style="color: var(--vault-on-surface-variant)">No events in the selected date range.</p>
+            <a href="/sync" class="inline-block mt-3 emerald-pulse px-4 py-2 rounded-lg font-semibold text-sm" style="text-decoration: none;">Run a Sync</a>
+        </div>
+    </template>
+
+    <!-- Loading state -->
+    <template x-if="loading">
+        <div class="flex justify-center py-16">
+            <div class="w-8 h-8 rounded-full" style="border: 3px solid var(--vault-surface-container-highest); border-top-color: var(--vault-primary); animation: spin 0.8s linear infinite;"></div>
+        </div>
+    </template>
+    <style>@keyframes spin { to { transform: rotate(360deg); } }</style>
+
+    <!-- Error state -->
+    <template x-if="error">
+        <div class="surface-high p-4" style="border-left: 3px solid var(--vault-secondary);">
+            <span style="color: var(--vault-secondary)" x-text="error"></span>
+        </div>
+    </template>
+</div>
+
+<script>
+function forecastApp() {
+    const PIXELS_PER_DAY = 8;
+    const PAST_DAYS = 90;
+    const FUTURE_DAYS = 180;
+
+    function dateToEpochDays(dateStr) {
+        const d = new Date(dateStr + 'T00:00:00');
+        return Math.floor(d.getTime() / 86400000);
+    }
+
+    function epochDaysToDate(days) {
+        return new Date(days * 86400000).toISOString().split('T')[0];
+    }
+
+    function epochDaysToFormatted(days) {
+        const d = new Date(days * 86400000);
+        return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+    }
+
+    const today = new Date().toISOString().split('T')[0];
+    const todayDays = dateToEpochDays(today);
+
+    return {
+        forecast: null,
+        loading: false,
+        error: null,
+        cashInput: '',
+
+        // Modal state
+        showAddExpense: false,
+        newExpense: { label: '', amount: '', date: today },
+        expenseSaving: false,
+        expenseError: null,
+
+        // Override state
+        selectedEvent: null,
+        overrideDate: '',
+        overrideSaving: false,
+        overrideError: null,
+
+        scrubberMin: todayDays - PAST_DAYS,
+        scrubberMax: todayDays + FUTURE_DAYS,
+        scrubberValue: todayDays,
+        todayValue: todayDays,
+
+        get scrubberDateISO() { return epochDaysToDate(this.scrubberValue); },
+        get scrubberDateFormatted() { return epochDaysToFormatted(this.scrubberValue); },
+        get scrubberMinLabel() { return epochDaysToFormatted(this.scrubberMin); },
+        get scrubberMaxLabel() { return epochDaysToFormatted(this.scrubberMax); },
+
+        get heroBalance() {
+            if (!this.forecast) return 0;
+            const targetDate = this.scrubberDateISO;
+            let balance = this.forecast.starting_balance;
+            for (const row of this.forecast.rows) {
+                if (row.date > targetDate) break;
+                balance = row.running_balance;
+            }
+            return balance;
+        },
+
+        get timelineWidth() { return (PAST_DAYS + FUTURE_DAYS) * PIXELS_PER_DAY; },
+        get scrubberX() { return (this.scrubberValue - this.scrubberMin) * PIXELS_PER_DAY; },
+
+        get streamLanes() {
+            if (!this.forecast) return [];
+            const lanes = {};
+            for (const row of this.forecast.rows) {
+                const name = row.stream_name || 'Unknown';
+                if (!lanes[name]) lanes[name] = { name, events: [] };
+                lanes[name].events.push(row);
+            }
+            return Object.values(lanes);
+        },
+
+        get monthMarkers() {
+            const markers = [];
+            let d = new Date((this.scrubberMin) * 86400000);
+            d.setUTCDate(1);
+            d.setUTCMonth(d.getUTCMonth() + 1);
+            const endDate = new Date(this.scrubberMax * 86400000);
+            while (d <= endDate) {
+                const days = dateToEpochDays(d.toISOString().split('T')[0]);
+                markers.push({
+                    x: (days - this.scrubberMin) * PIXELS_PER_DAY,
+                    label: d.toLocaleDateString('en-US', { month: 'short', year: '2-digit', timeZone: 'UTC' })
+                });
+                d.setUTCMonth(d.getUTCMonth() + 1);
+            }
+            return markers;
+        },
+
+        getEventX(dateStr) {
+            const days = dateToEpochDays(dateStr);
+            return (days - this.scrubberMin) * PIXELS_PER_DAY;
+        },
+
+        updateHero() { /* Alpine reactivity handles this */ },
+
+        selectEvent(event) {
+            this.selectedEvent = event;
+            this.overrideDate = event.date;
+            this.overrideError = null;
+        },
+
+        async saveExpense() {
+            this.expenseSaving = true;
+            this.expenseError = null;
+            const amount = parseFloat(this.newExpense.amount);
+            if (isNaN(amount) || amount === 0) {
+                this.expenseError = 'Enter a valid non-zero amount.';
+                this.expenseSaving = false;
+                return;
+            }
+            if (!this.newExpense.label.trim()) {
+                this.expenseError = 'Label is required.';
+                this.expenseSaving = false;
+                return;
+            }
+            try {
+                const res = await fetch('/api/events', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        stream_id: {{ expenses_stream_id }},
+                        label: this.newExpense.label.trim(),
+                        scheduled_date: this.newExpense.date,
+                        amount: -Math.abs(amount)
+                    })
+                });
+                if (res.ok) {
+                    this.showAddExpense = false;
+                    this.newExpense = { label: '', amount: '', date: today };
+                    await this.fetchForecast();
+                } else {
+                    const err = await res.json();
+                    this.expenseError = err.message || 'Failed to save.';
+                }
+            } catch (e) {
+                this.expenseError = 'Network error.';
+            } finally {
+                this.expenseSaving = false;
+            }
+        },
+
+        async saveOverride() {
+            if (!this.selectedEvent || !this.overrideDate) return;
+            this.overrideSaving = true;
+            this.overrideError = null;
+            try {
+                const res = await fetch(`/api/events/${this.selectedEvent.event_id}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ expected_date: this.overrideDate })
+                });
+                if (res.ok) {
+                    this.selectedEvent = null;
+                    await this.fetchForecast();
+                } else {
+                    const err = await res.json();
+                    this.overrideError = err.message || 'Failed to save override.';
+                }
+            } catch (e) {
+                this.overrideError = 'Network error.';
+            } finally {
+                this.overrideSaving = false;
+            }
+        },
+
+        async setCashBalance() {
+            const amount = parseFloat(this.cashInput);
+            if (isNaN(amount)) return;
+            try {
+                await fetch('/api/settings/cash', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ amount })
+                });
+                window.location.reload();
+            } catch (e) {
+                this.error = 'Failed to save cash balance.';
+            }
+        },
+
+        async fetchForecast() {
+            this.loading = true;
+            this.error = null;
+            const from = epochDaysToDate(this.scrubberMin);
+            const through = epochDaysToDate(this.scrubberMax);
+            try {
+                const res = await fetch(`/api/forecast?from=${from}&through=${through}`);
+                if (res.ok) {
+                    this.forecast = await res.json();
+                } else {
+                    const err = await res.json();
+                    if (err.error !== 'no_starting_balance') {
+                        this.error = err.message || 'Failed to load forecast.';
+                    }
+                }
+            } catch (e) {
+                this.error = 'Could not load forecast. Check your connection.';
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        init() {
+            this.fetchForecast();
+            document.addEventListener('htmx:afterRequest', () => this.fetchForecast());
+        }
+    };
+}
+</script>
+{% endblock %}

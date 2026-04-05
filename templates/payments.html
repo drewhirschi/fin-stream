@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block nav_payments %}active{% endblock %}
+
+{% block content %}
+<h1 class="text-2xl font-bold mb-6">Payments</h1>
+
+{% if payments.is_empty() %}
+<div class="alert alert-info">
+    No payment data yet. <a href="/sync" class="link">Run a sync</a> to pull data from The Mortgage Office.
+</div>
+{% else %}
+<div class="overflow-x-auto">
+    <table class="table bg-base-100">
+        <thead>
+            <tr>
+                <th>Date</th>
+                <th>Source</th>
+                <th>Amount</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for p in payments %}
+            <tr>
+                <td>{{ p.actual_date.as_deref().unwrap_or(&p.scheduled_date) }}</td>
+                <td>{{ p.label.as_deref().unwrap_or("-") }}</td>
+                <td class="{% if p.status == "received" %}text-success{% endif %}">
+                    ${{ "{:.2}"|format(p.amount) }}
+                </td>
+                <td>
+                    {% if p.status == "received" %}
+                        <span class="badge badge-success badge-sm">Received</span>
+                    {% else if p.status == "projected" %}
+                        <span class="badge badge-info badge-sm">Projected</span>
+                    {% else %}
+                        <span class="badge badge-sm">{{ p.status }}</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+{% endblock %}

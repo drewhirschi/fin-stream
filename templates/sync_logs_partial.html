@@ -1,0 +1,19 @@
+{% for log in logs %}
+<tr>
+    <td>{{ log.id }}</td>
+    <td>{{ log.started_at[..19] }}</td>
+    <td>{% match log.finished_at %}{% when Some with (f) %}{{ f[..19] }}{% when None %}-{% endmatch %}</td>
+    <td>
+        {% if log.status == "success" %}
+        <span class="badge badge-success badge-sm">{{ log.status }}</span>
+        {% else if log.status == "error" %}
+        <span class="badge badge-error badge-sm">{{ log.status }}</span>
+        {% else %}
+        <span class="badge badge-warning badge-sm">{{ log.status }}</span>
+        {% endif %}
+    </td>
+    <td>{{ log.loans_upserted.unwrap_or(0) }}</td>
+    <td>{{ log.events_upserted.unwrap_or(0) }}</td>
+    <td>{{ log.error_message.as_deref().unwrap_or("-") }}</td>
+</tr>
+{% endfor %}

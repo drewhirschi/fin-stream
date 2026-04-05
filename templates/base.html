@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }}</title>
+    <link rel="stylesheet" href="/static/vendor/css/daisyui.css">
+    <link rel="stylesheet" href="/static/vendor/css/daisyui-themes.css">
+    <script src="/static/vendor/js/tailwindcss.js" type="module"></script>
+    <script src="/static/vendor/js/htmx.min.js"></script>
+    <script src="/static/vendor/js/alpine.min.js" defer></script>
+    <link rel="stylesheet" href="/static/vault.css">
+    <link rel="stylesheet" href="/static/style.css">
+    {% block head %}{% endblock %}
+</head>
+<body class="min-h-screen bg-base-200">
+    <div class="drawer lg:drawer-open" x-data="{ open: false }">
+        <input id="drawer" type="checkbox" class="drawer-toggle" x-model="open">
+
+        <div class="drawer-content">
+            <!-- Navbar -->
+            <div class="navbar bg-base-100 shadow-sm lg:hidden">
+                <div class="flex-none">
+                    <label for="drawer" class="btn btn-square btn-ghost">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+                        </svg>
+                    </label>
+                </div>
+                <div class="flex-1">
+                    <span class="text-xl font-bold px-2">Trust Deeds</span>
+                </div>
+            </div>
+
+            <!-- Page content -->
+            <main class="p-4 lg:p-6">
+                {% block content %}{% endblock %}
+            </main>
+        </div>
+
+        <!-- Sidebar -->
+        <div class="drawer-side">
+            <label for="drawer" class="drawer-overlay"></label>
+            <aside class="bg-base-100 w-64 min-h-full p-4 flex flex-col">
+                <div class="text-xl font-bold mb-6 px-2" style="font-family: 'Manrope', system-ui, sans-serif;">Trust Deeds</div>
+                <ul class="menu flex-1">
+                    <li><a href="/" class="{% block nav_dashboard %}{% endblock %}">Dashboard</a></li>
+                    <li><a href="/loans" class="{% block nav_loans %}{% endblock %}">Loans</a></li>
+                    <li><a href="/payments" class="{% block nav_payments %}{% endblock %}">Payments</a></li>
+                    <li><a href="/forecast" class="{% block nav_forecast %}{% endblock %}">Forecast</a></li>
+                    <li><a href="/sync" class="{% block nav_sync %}{% endblock %}">Sync</a></li>
+                </ul>
+
+                <!-- Answer Badge: cash position at next big expense -->
+                <div x-data="answerBadge()" x-init="refresh()" class="mt-auto p-3 rounded-xl" style="background: #191c1f;">
+                    <template x-if="loaded && targetDate">
+                        <a href="/forecast" class="block no-underline">
+                            <div style="font-size: 0.625rem; color: #86948a; text-transform: uppercase; letter-spacing: 0.05em;">Cash on</div>
+                            <div style="font-family: 'Roboto Mono', monospace; font-size: 0.8125rem; color: #e1e2e7;" x-text="targetDateFormatted"></div>
+                            <div style="font-family: 'Manrope', sans-serif; font-size: 1.5rem; font-weight: 800; font-variant-numeric: tabular-nums;"
+                                 :style="'color: ' + (balance >= 0 ? '#4edea3' : '#ef4444')"
+                                 x-text="'$' + Math.abs(balance).toLocaleString('en-US', {minimumFractionDigits: 0, maximumFractionDigits: 0})">
+                            </div>
+                        </a>
+                    </template>
+                    <template x-if="loaded && !targetDate">
+                        <a href="/forecast" class="block no-underline" style="color: #86948a; font-size: 0.75rem;">
+                            Set up forecast
+                        </a>
+                    </template>
+                </div>
+            </aside>
+        </div>
+    </div>
+    <script>
+    function answerBadge() {
+        // Threshold: show cash at the date of the next expense over this amount
+        const THRESHOLD = parseFloat(localStorage.getItem('badge_threshold') || '500');
+        return {
+            loaded: false,
+            targetDate: null,
+            targetDateFormatted: '',
+            balance: 0,
+            async refresh() {
+                try {
+                    const today = new Date().toISOString().split('T')[0];
+                    const through = new Date(Date.now() + 180 * 86400000).toISOString().split('T')[0];
+                    const res = await fetch(`/api/forecast?from=${today}&through=${through}`);
+                    if (!res.ok) { this.loaded = true; return; }
+                    const data = await res.json();
+                    // Find the next expense over the threshold
+                    const bigExpense = data.rows.find(r => r.amount < 0 && Math.abs(r.amount) >= THRESHOLD);
+                    if (bigExpense) {
+                        this.targetDate = bigExpense.date;
+                        const d = new Date(bigExpense.date + 'T00:00:00Z');
+                        this.targetDateFormatted = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+                        // Find balance at that date
+                        let bal = data.starting_balance;
+                        for (const row of data.rows) {
+                            if (row.date > bigExpense.date) break;
+                            bal = row.running_balance;
+                        }
+                        this.balance = bal;
+                    } else if (data.rows.length > 0) {
+                        // No big expense found, show balance at last event
+                        const last = data.rows[data.rows.length - 1];
+                        this.targetDate = last.date;
+                        const d = new Date(last.date + 'T00:00:00Z');
+                        this.targetDateFormatted = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+                        this.balance = last.running_balance;
+                    }
+                } catch (e) { /* silent */ }
+                this.loaded = true;
+            }
+        };
+    }
+    </script>
+</body>
+</html>

@@ -1,0 +1,5 @@
+@media print {
+    .drawer-side, .navbar { display: none !important; }
+    .drawer-content { margin-left: 0 !important; }
+    * { background: white !important; color: black !important; }
+}

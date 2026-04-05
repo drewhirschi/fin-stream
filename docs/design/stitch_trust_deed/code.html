@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Precision Vault | Streams</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=Manrope:wght@400;500;600;700;800&amp;family=Roboto+Mono&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+                  "secondary-container": "#a40217",
+                  "error-container": "#93000a",
+                  "on-background": "#e1e2e7",
+                  "primary": "#4edea3",
+                  "primary-fixed": "#6ffbbe",
+                  "surface-container-lowest": "#0b0e11",
+                  "on-secondary": "#68000a",
+                  "surface-container-low": "#191c1f",
+                  "on-primary": "#003824",
+                  "surface-bright": "#37393d",
+                  "on-primary-container": "#00422b",
+                  "inverse-surface": "#e1e2e7",
+                  "on-tertiary": "#002e6a",
+                  "secondary-fixed": "#ffdad7",
+                  "on-error-container": "#ffdad6",
+                  "primary-container": "#10b981",
+                  "inverse-primary": "#006c49",
+                  "on-secondary-container": "#ffaea8",
+                  "tertiary-fixed-dim": "#adc6ff",
+                  "error": "#ffb4ab",
+                  "tertiary-container": "#71a1ff",
+                  "on-surface": "#e1e2e7",
+                  "outline": "#86948a",
+                  "surface-container-highest": "#323538",
+                  "on-tertiary-fixed-variant": "#004395",
+                  "surface-tint": "#4edea3",
+                  "surface-container-high": "#272a2e",
+                  "outline-variant": "#3c4a42",
+                  "on-secondary-fixed-variant": "#930013",
+                  "tertiary-fixed": "#d8e2ff",
+                  "primary-fixed-dim": "#4edea3",
+                  "inverse-on-surface": "#2e3134",
+                  "on-tertiary-container": "#00367a",
+                  "surface-variant": "#323538",
+                  "on-surface-variant": "#bbcabf",
+                  "on-secondary-fixed": "#410004",
+                  "surface-container": "#1d2023",
+                  "tertiary": "#adc6ff",
+                  "on-primary-fixed": "#002113",
+                  "surface": "#111417",
+                  "on-error": "#690005",
+                  "on-tertiary-fixed": "#001a42",
+                  "surface-dim": "#111417",
+                  "secondary-fixed-dim": "#ffb3ad",
+                  "secondary": "#ffb3ad",
+                  "background": "#111417",
+                  "on-primary-fixed-variant": "#005236"
+          },
+          "borderRadius": {
+                  "DEFAULT": "0.125rem",
+                  "lg": "0.25rem",
+                  "xl": "0.5rem",
+                  "full": "0.75rem"
+          },
+          "fontFamily": {
+                  "headline": ["Manrope"],
+                  "body": ["Inter"],
+                  "label": ["Inter"]
+          }
+        },
+      },
+    }
+  </script>
+<style>
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    }
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 4px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: #111417;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: #323538;
+      border-radius: 10px;
+    }
+  </style>
+</head>
+<body class="bg-background text-on-background font-body selection:bg-primary selection:text-on-primary overflow-hidden">
+<div class="flex h-screen overflow-hidden">
+<!-- SideNavBar (from JSON) -->
+<aside class="flex flex-col h-screen p-4 border-r border-white/5 bg-[#191c1f] w-64 shrink-0 shadow-[24px_0px_48px_rgba(0,0,0,0.4)]">
+<div class="flex items-center gap-3 px-2 mb-10">
+<div class="w-8 h-8 rounded-lg bg-primary-container flex items-center justify-center">
+<span class="material-symbols-outlined text-on-primary-container text-xl" style="font-variation-settings: 'FILL' 1;">cached</span>
+</div>
+<div>
+<h1 class="text-lg font-black text-[#10B981] font-headline tracking-tighter">The Vault</h1>
+<p class="text-[10px] uppercase tracking-widest text-on-surface-variant/60 font-bold">Institutional Grade</p>
+</div>
+</div>
+<nav class="flex-1 space-y-2">
+<!-- Dashboard -->
+<a class="flex items-center gap-3 px-4 py-3 text-[#e1e2e7]/50 font-medium font-headline hover:bg-[#323538] hover:text-[#e1e2e7] transition-all group" href="#">
+<span class="material-symbols-outlined group-hover:scale-110 transition-transform" data-icon="dashboard">dashboard</span>
+<span class="text-sm">Dashboard</span>
+</a>
+<!-- Streams (ACTIVE) -->
+<a class="flex items-center gap-3 px-4 py-3 bg-[#323538] text-[#10B981] rounded-lg font-medium font-headline translate-x-1 transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="waves" style="font-variation-settings: 'FILL' 1;">waves</span>
+<span class="text-sm">Streams</span>
+</a>
+<!-- Projections -->
+<a class="flex items-center gap-3 px-4 py-3 text-[#e1e2e7]/50 font-medium font-headline hover:bg-[#323538] hover:text-[#e1e2e7] transition-all group" href="#">
+<span class="material-symbols-outlined group-hover:scale-110 transition-transform" data-icon="query_stats">query_stats</span>
+<span class="text-sm">Projections</span>
+</a>
+<!-- Settings -->
+<a class="flex items-center gap-3 px-4 py-3 text-[#e1e2e7]/50 font-medium font-headline hover:bg-[#323538] hover:text-[#e1e2e7] transition-all group" href="#">
+<span class="material-symbols-outlined group-hover:scale-110 transition-transform" data-icon="settings">settings</span>
+<span class="text-sm">Settings</span>
+</a>
+</nav>
+<div class="mt-auto space-y-2 pt-6 border-t border-white/5">
+<button class="w-full bg-primary-container text-on-primary-container py-2.5 rounded-lg font-bold text-sm mb-4 hover:bg-primary transition-colors flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-sm">add_circle</span>
+          New Stream
+        </button>
+<a class="flex items-center gap-3 px-4 py-2 text-[#e1e2e7]/50 hover:text-on-background transition-colors" href="#">
+<span class="material-symbols-outlined text-[20px]" data-icon="help_outline">help_outline</span>
+<span class="text-sm font-medium">Support</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-2 text-[#e1e2e7]/50 hover:text-secondary-fixed transition-colors" href="#">
+<span class="material-symbols-outlined text-[20px]" data-icon="logout">logout</span>
+<span class="text-sm font-medium">Logout</span>
+</a>
+</div>
+</aside>
+<!-- Main Content Area -->
+<main class="flex-1 flex flex-col min-w-0 bg-background relative overflow-hidden">
+<!-- TopNavBar (from JSON) -->
+<header class="flex justify-between items-center w-full px-8 h-16 max-w-full mx-auto bg-[#191c1f] sticky top-0 z-10">
+<div class="flex items-center gap-8">
+<span class="text-xl font-bold tracking-tighter text-[#e1e2e7] font-headline">Precision Vault</span>
+<nav class="hidden md:flex items-center gap-6">
+<a class="font-headline text-sm tracking-tight text-[#e1e2e7]/60 hover:text-[#4edea3] transition-colors" href="#">Portfolio</a>
+<a class="font-headline text-sm tracking-tight text-[#10B981] border-b-2 border-[#10B981] pb-1" href="#">Analysis</a>
+<a class="font-headline text-sm tracking-tight text-[#e1e2e7]/60 hover:text-[#4edea3] transition-colors" href="#">Reports</a>
+</nav>
+</div>
+<div class="flex items-center gap-5">
+<div class="flex items-center gap-4 mr-2">
+<button class="p-2 rounded-full hover:bg-surface-container-highest transition-colors text-on-surface-variant">
+<span class="material-symbols-outlined" data-icon="calendar_today">calendar_today</span>
+</button>
+<button class="p-2 rounded-full hover:bg-surface-container-highest transition-colors text-on-surface-variant relative">
+<span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+<span class="absolute top-2 right-2 w-2 h-2 bg-primary rounded-full ring-2 ring-[#191c1f]"></span>
+</button>
+</div>
+<div class="flex items-center gap-3 pl-5 border-l border-white/10">
+<div class="text-right">
+<p class="text-xs font-bold text-on-background">Institutional Portfolio</p>
+<p class="text-[10px] text-primary">Connected</p>
+</div>
+<img alt="User profile" class="w-8 h-8 rounded-full border border-white/10 object-cover" data-alt="Close-up portrait of a professional male financier with glasses in a modern office, soft high-end lighting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuD0qR6ABu_mbw58HLIWTszu3wTWU2yhJ-zMp3qpaLlfV-ny6Vtu03wE9HWA4MpZZtW3spjufJQqfr6UVgaGU9q74fQ7rmJxbNChk4t42_0I3jXT50huustl4ZjNqNaCn_uCrQp4q-SyZenX_KEAQiP0RuFLke86wdiFRrkxfrTxWq40k-J326r_CYcw3-J91177PyDWpK2Sg8iA9_CLWfdcmODxEZEKirfYjIRRkUQvNh2GLTxSrfBTLw8ncrdHfq7D_vJV27RCyL0w"/>
+</div>
+</div>
+</header>
+<!-- Content Canvas -->
+<div class="flex-1 overflow-y-auto p-8 custom-scrollbar">
+<!-- Header Section -->
+<div class="mb-10 flex justify-between items-end">
+<div>
+<h2 class="text-4xl font-extrabold font-headline tracking-tighter text-on-background mb-2">Liquidity Streams</h2>
+<p class="text-on-surface-variant max-w-lg">Monitoring real-time capital flow across active channels. Hover over any node for cumulative delta analysis.</p>
+</div>
+<div class="flex items-center gap-3 bg-surface-container-low p-1.5 rounded-full border border-white/5">
+<button class="px-4 py-1.5 rounded-full bg-surface-container-highest text-primary text-xs font-bold tracking-tight">Month</button>
+<button class="px-4 py-1.5 rounded-full text-on-surface-variant text-xs font-bold tracking-tight hover:text-on-background">Quarter</button>
+<button class="px-4 py-1.5 rounded-full text-on-surface-variant text-xs font-bold tracking-tight hover:text-on-background">Year</button>
+</div>
+</div>
+<!-- Streams Container -->
+<div class="space-y-12 bg-surface-container-lowest p-8 rounded-xl border border-white/5">
+<!-- Stream: W-2 -->
+<div class="group relative">
+<div class="flex justify-between items-center mb-6">
+<div class="flex items-center gap-4">
+<div class="w-10 h-10 rounded-lg bg-primary-container/20 flex items-center justify-center text-primary">
+<span class="material-symbols-outlined" data-icon="payments" style="font-variation-settings: 'FILL' 1;">payments</span>
+</div>
+<div>
+<h3 class="font-headline font-bold text-lg">W-2</h3>
+<p class="text-[10px] uppercase tracking-widest font-bold text-on-surface-variant/60">Primary Income Source</p>
+</div>
+</div>
+<div class="text-right">
+<span class="font-mono text-primary font-bold text-xl">+$8,420.00</span>
+<p class="text-[10px] text-on-surface-variant">Est. Net Monthly</p>
+</div>
+</div>
+<div class="relative h-20 flex items-center">
+<!-- Timeline Base -->
+<div class="absolute inset-x-0 h-[1px] bg-white/10"></div>
+<!-- Daily Ticks -->
+<div class="absolute inset-x-0 flex justify-between px-2">
+<div class="h-2 w-[1px] bg-white/5"></div><div class="h-1 w-[1px] bg-white/5"></div><div class="h-1 w-[1px] bg-white/5"></div><div class="h-1 w-[1px] bg-white/5"></div>
+<div class="h-2 w-[1px] bg-white/5"></div><div class="h-1 w-[1px] bg-white/5"></div><div class="h-1 w-[1px] bg-white/5"></div><div class="h-1 w-[1px] bg-white/5"></div>
+<div class="h-2 w-[1px] bg-white/5"></div><div class="h-1 w-[1px] bg-white/5"></div><div class="h-1 w-[1px] bg-white/5"></div><div class="h-1 w-[1px] bg-white/5"></div>
+<div class="h-2 w-[1px] bg-white/5"></div><div class="h-1 w-[1px] bg-white/5"></div><div class="h-1 w-[1px] bg-white/5"></div><div class="h-1 w-[1px] bg-white/5"></div>
+<div class="h-2 w-[1px] bg-white/5"></div><div class="h-1 w-[1px] bg-white/5"></div><div class="h-1 w-[1px] bg-white/5"></div><div class="h-1 w-[1px] bg-white/5"></div>
+<div class="h-2 w-[1px] bg-white/5"></div><div class="h-1 w-[1px] bg-white/5"></div><div class="h-1 w-[1px] bg-white/5"></div><div class="h-1 w-[1px] bg-white/5"></div>
+<div class="h-2 w-[1px] bg-white/5"></div><div class="h-1 w-[1px] bg-white/5"></div><div class="h-1 w-[1px] bg-white/5"></div><div class="h-1 w-[1px] bg-white/5"></div>
+<div class="h-2 w-[1px] bg-white/5"></div><div class="h-1 w-[1px] bg-white/5"></div>
+</div>
+<!-- Payment Indicators (W-2: 15th and 30th) -->
+<div class="absolute left-[50%] -translate-x-1/2 flex flex-col items-center group/tooltip">
+<div class="w-4 h-4 bg-primary rounded-full shadow-[0_0_12px_rgba(78,222,163,0.6)] cursor-help hover:scale-125 transition-transform"></div>
+<!-- Tooltip -->
+<div class="absolute bottom-full mb-3 opacity-0 group-hover/tooltip:opacity-100 transition-opacity bg-surface-container-high border border-white/10 p-3 rounded-lg shadow-2xl w-48 pointer-events-none z-20">
+<p class="text-[10px] text-on-surface-variant font-bold uppercase mb-1">Projected Flow</p>
+<p class="font-mono text-primary text-sm font-bold">+$4,210.00 <span class="text-[10px] opacity-60">Net</span></p>
+<p class="text-[10px] text-on-surface-variant mt-2">1 of 2 payments this month</p>
+</div>
+</div>
+<div class="absolute right-0 flex flex-col items-center group/tooltip">
+<div class="w-4 h-4 bg-primary rounded-full shadow-[0_0_12px_rgba(78,222,163,0.6)] cursor-help hover:scale-125 transition-transform"></div>
+<div class="absolute bottom-full mb-3 opacity-0 group-hover/tooltip:opacity-100 transition-opacity bg-surface-container-high border border-white/10 p-3 rounded-lg shadow-2xl w-48 pointer-events-none z-20 right-0">
+<p class="text-[10px] text-on-surface-variant font-bold uppercase mb-1">Full Cycle Delta</p>
+<p class="font-mono text-primary text-sm font-bold">+$8,420.00 <span class="text-[10px] opacity-60">Net</span></p>
+<p class="text-[10px] text-on-surface-variant mt-2">2 of 2 payments completed</p>
+</div>
+</div>
+</div>
+</div>
+<!-- Stream: Loan -->
+<div class="group relative">
+<div class="flex justify-between items-center mb-6">
+<div class="flex items-center gap-4">
+<div class="w-10 h-10 rounded-lg bg-secondary-container/20 flex items-center justify-center text-secondary">
+<span class="material-symbols-outlined" data-icon="account_balance" style="font-variation-settings: 'FILL' 1;">account_balance</span>
+</div>
+<div>
+<h3 class="font-headline font-bold text-lg">Loan</h3>
+<p class="text-[10px] uppercase tracking-widest font-bold text-on-surface-variant/60">Servicing Obligation</p>
+</div>
+</div>
+<div class="text-right">
+<span class="font-mono text-secondary font-bold text-xl">-$2,150.00</span>
+<p class="text-[10px] text-on-surface-variant">Total Debit Liability</p>
+</div>
+</div>
+<div class="relative h-20 flex items-center">
+<div class="absolute inset-x-0 h-[1px] bg-white/10"></div>
+<!-- Payment Indicators (Loan: 7th, 14th, 21st, 28th) -->
+<div class="absolute left-[23%] flex flex-col items-center group/tooltip">
+<div class="w-3 h-3 bg-secondary rounded-full shadow-[0_0_12px_rgba(164,2,23,0.4)] cursor-help hover:scale-125 transition-transform"></div>
+<div class="absolute bottom-full mb-3 opacity-0 group-hover/tooltip:opacity-100 transition-opacity bg-surface-container-high border border-white/10 p-3 rounded-lg shadow-2xl w-48 pointer-events-none z-20">
+<p class="text-[10px] text-on-surface-variant font-bold uppercase mb-1">Installment 01</p>
+<p class="font-mono text-secondary text-sm font-bold">-$537.50 <span class="text-[10px] opacity-60">Net Effect</span></p>
+<p class="text-[10px] text-on-surface-variant mt-2">1 payment from today</p>
+</div>
+</div>
+<div class="absolute left-[46%] flex flex-col items-center group/tooltip">
+<div class="w-3 h-3 bg-secondary rounded-full shadow-[0_0_12px_rgba(164,2,23,0.4)] cursor-help hover:scale-125 transition-transform"></div>
+<div class="absolute bottom-full mb-3 opacity-0 group-hover/tooltip:opacity-100 transition-opacity bg-surface-container-high border border-white/10 p-3 rounded-lg shadow-2xl w-48 pointer-events-none z-20">
+<p class="text-[10px] text-on-surface-variant font-bold uppercase mb-1">Installment 02</p>
+<p class="font-mono text-secondary text-sm font-bold">-$1,075.00 <span class="text-[10px] opacity-60">Net Effect</span></p>
+<p class="text-[10px] text-on-surface-variant mt-2">2 payments from today</p>
+</div>
+</div>
+<div class="absolute left-[69%] flex flex-col items-center group/tooltip">
+<div class="w-3 h-3 bg-secondary rounded-full shadow-[0_0_12px_rgba(164,2,23,0.4)] cursor-help hover:scale-125 transition-transform"></div>
+<div class="absolute bottom-full mb-3 opacity-0 group-hover/tooltip:opacity-100 transition-opacity bg-surface-container-high border border-white/10 p-3 rounded-lg shadow-2xl w-48 pointer-events-none z-20">
+<p class="text-[10px] text-on-surface-variant font-bold uppercase mb-1">Installment 03</p>
+<p class="font-mono text-secondary text-sm font-bold">-$1,612.50 <span class="text-[10px] opacity-60">Net Effect</span></p>
+<p class="text-[10px] text-on-surface-variant mt-2">3 payments from today</p>
+</div>
+</div>
+<div class="absolute left-[92%] flex flex-col items-center group/tooltip">
+<div class="w-3 h-3 bg-secondary rounded-full shadow-[0_0_12px_rgba(164,2,23,0.4)] cursor-help hover:scale-125 transition-transform"></div>
+<div class="absolute bottom-full mb-3 opacity-0 group-hover/tooltip:opacity-100 transition-opacity bg-surface-container-high border border-white/10 p-3 rounded-lg shadow-2xl w-48 pointer-events-none z-20 right-0">
+<p class="text-[10px] text-on-surface-variant font-bold uppercase mb-1">Installment 04</p>
+<p class="font-mono text-secondary text-sm font-bold">-$2,150.00 <span class="text-[10px] opacity-60">Net Effect</span></p>
+<p class="text-[10px] text-on-surface-variant mt-2">4 payments from today</p>
+</div>
+</div>
+</div>
+</div>
+<!-- Stream: Expenses -->
+<div class="group relative">
+<div class="flex justify-between items-center mb-6">
+<div class="flex items-center gap-4">
+<div class="w-10 h-10 rounded-lg bg-surface-container-highest flex items-center justify-center text-on-surface-variant">
+<span class="material-symbols-outlined" data-icon="shopping_cart" style="font-variation-settings: 'FILL' 1;">shopping_cart</span>
+</div>
+<div>
+<h3 class="font-headline font-bold text-lg">Expenses</h3>
+<p class="text-[10px] uppercase tracking-widest font-bold text-on-surface-variant/60">Fixed Recurring Cost</p>
+</div>
+</div>
+<div class="text-right">
+<span class="font-mono text-on-surface font-bold text-xl">-$1,100.00</span>
+<p class="text-[10px] text-on-surface-variant">Monthly Allocation</p>
+</div>
+</div>
+<div class="relative h-20 flex items-center">
+<div class="absolute inset-x-0 h-[1px] bg-white/10"></div>
+<!-- Payment Indicators (Expenses: 2nd and 19th) -->
+<div class="absolute left-[6.6%] flex flex-col items-center group/tooltip">
+<div class="w-3 h-3 bg-secondary rounded-full shadow-[0_0_10px_rgba(164,2,23,0.3)] cursor-help hover:scale-125 transition-transform"></div>
+<div class="absolute bottom-full mb-3 opacity-0 group-hover/tooltip:opacity-100 transition-opacity bg-surface-container-high border border-white/10 p-3 rounded-lg shadow-2xl w-48 pointer-events-none z-20">
+<p class="text-[10px] text-on-surface-variant font-bold uppercase mb-1">Facility Fee</p>
+<p class="font-mono text-secondary text-sm font-bold">-$450.00 <span class="text-[10px] opacity-60">Net</span></p>
+<p class="text-[10px] text-on-surface-variant mt-2">1st payment this cycle</p>
+</div>
+</div>
+<div class="absolute left-[63%] flex flex-col items-center group/tooltip">
+<div class="w-3 h-3 bg-secondary rounded-full shadow-[0_0_10px_rgba(164,2,23,0.3)] cursor-help hover:scale-125 transition-transform"></div>
+<div class="absolute bottom-full mb-3 opacity-0 group-hover/tooltip:opacity-100 transition-opacity bg-surface-container-high border border-white/10 p-3 rounded-lg shadow-2xl w-48 pointer-events-none z-20">
+<p class="text-[10px] text-on-surface-variant font-bold uppercase mb-1">Utilities Block</p>
+<p class="font-mono text-secondary text-sm font-bold">-$1,100.00 <span class="text-[10px] opacity-60">Net</span></p>
+<p class="text-[10px] text-on-surface-variant mt-2">2 of 2 payments from today</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Metric Cards Bento Grid -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-6 mt-12">
+<div class="bg-surface-container-low p-6 rounded-xl border border-white/5 relative overflow-hidden group">
+<div class="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-full -mr-16 -mt-16 blur-2xl"></div>
+<p class="text-xs font-bold text-on-surface-variant uppercase tracking-widest mb-4">Net Monthly Delta</p>
+<div class="flex items-baseline gap-2">
+<span class="text-3xl font-black font-headline text-primary">+$5,170</span>
+<span class="text-xs text-primary/60 font-bold mb-1">.00</span>
+</div>
+<div class="mt-4 flex items-center gap-2">
+<span class="text-[10px] bg-primary/20 text-primary px-2 py-0.5 rounded-full font-bold">+12% vs LY</span>
+<span class="text-[10px] text-on-surface-variant">Efficiency Gain</span>
+</div>
+</div>
+<div class="bg-surface-container-low p-6 rounded-xl border border-white/5 relative overflow-hidden group">
+<div class="absolute top-0 right-0 w-32 h-32 bg-secondary/5 rounded-full -mr-16 -mt-16 blur-2xl"></div>
+<p class="text-xs font-bold text-on-surface-variant uppercase tracking-widest mb-4">Total Liabilities</p>
+<div class="flex items-baseline gap-2">
+<span class="text-3xl font-black font-headline text-on-surface">-$3,250</span>
+<span class="text-xs text-on-surface-variant font-bold mb-1">.00</span>
+</div>
+<div class="mt-4 flex items-center gap-2">
+<div class="flex-1 h-1 bg-surface-container-highest rounded-full overflow-hidden">
+<div class="w-[38%] h-full bg-secondary"></div>
+</div>
+<span class="text-[10px] text-on-surface-variant font-bold">38% OF INCOME</span>
+</div>
+</div>
+<div class="bg-surface-container-low p-6 rounded-xl border border-white/5 relative overflow-hidden group">
+<div class="absolute top-0 right-0 w-32 h-32 bg-tertiary/5 rounded-full -mr-16 -mt-16 blur-2xl"></div>
+<p class="text-xs font-bold text-on-surface-variant uppercase tracking-widest mb-4">Stream Liquidity Index</p>
+<div class="flex items-baseline gap-2">
+<span class="text-3xl font-black font-headline text-tertiary">94.2</span>
+<span class="text-xs text-tertiary/60 font-bold mb-1">Optimal</span>
+</div>
+<div class="mt-4 flex items-center gap-4">
+<div class="flex -space-x-2">
+<div class="w-6 h-6 rounded-full border-2 border-surface-container-low bg-primary"></div>
+<div class="w-6 h-6 rounded-full border-2 border-surface-container-low bg-secondary"></div>
+<div class="w-6 h-6 rounded-full border-2 border-surface-container-low bg-surface-container-highest flex items-center justify-center">
+<span class="text-[8px] font-bold text-on-surface">+1</span>
+</div>
+</div>
+<span class="text-[10px] text-on-surface-variant font-medium">Monitoring 3 active channels</span>
+</div>
+</div>
+</div>
+</div>
+</main>
+</div>
+</body></html>
