@@ -2,6 +2,7 @@ pub mod config;
 pub mod db;
 pub mod filters;
 pub mod models;
+pub mod monarch;
 pub mod routes;
 pub mod templates;
 pub mod tmo;

@@ -26,3 +26,11 @@ pub fn tmo_account() -> String {
 pub fn tmo_pin() -> String {
     env::var("TMO_PIN").expect("TMO_PIN must be set")
 }
+
+pub fn monarch_token() -> String {
+    env::var("MONARCH_TOKEN").expect("MONARCH_TOKEN must be set")
+}
+
+pub fn monarch_account_id() -> String {
+    env::var("MONARCH_ACCOUNT_ID").unwrap_or_else(|_| "217902882668946592".into())
+}
