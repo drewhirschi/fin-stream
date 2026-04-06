@@ -16,7 +16,7 @@ dotenvy = "0.15"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite"] }
-reqwest = { version = "0.12", features = ["json", "cookies"] }
+reqwest = { version = "0.12", features = ["json", "cookies", "native-tls"] }
 chrono = { version = "0.4", features = ["serde"] }
 anyhow = "1"
 urlencoding = "2"
