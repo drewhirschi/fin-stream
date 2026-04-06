@@ -175,5 +175,6 @@ pub async fn estimate_service_fee(pool: &SqlitePool) -> f64 {
     .ok()
     .flatten();
 
-    result.map(|(v,)| v).unwrap_or(0.0)
+    // TMO stores service fees as negative values; return absolute value
+    result.map(|(v,)| v.abs()).unwrap_or(0.0)
 }

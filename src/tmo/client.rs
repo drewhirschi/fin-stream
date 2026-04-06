@@ -4,6 +4,7 @@
 /// API base: https://lvcprod.themortgageoffice.com
 /// Auth: session-based (cookies after POST /api/login)
 use reqwest::Client;
+use std::error::Error as StdError;
 use std::sync::Arc;
 
 use crate::models::*;
@@ -35,7 +36,16 @@ impl TmoClient {
             .header("Referer", "https://lenders.themortgageoffice.com/")
             .json(&body)
             .send()
-            .await?;
+            .await
+            .map_err(|e| {
+                tracing::error!("TMO login request failed: {e}");
+                let mut source: Option<&dyn StdError> = e.source();
+                while let Some(s) = source {
+                    tracing::error!("  caused by: {s}");
+                    source = s.source();
+                }
+                e
+            })?;
 
         let resp: TmoResponse<TmoLoginData> = res.json().await?;
 

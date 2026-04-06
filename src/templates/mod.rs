@@ -15,6 +15,7 @@ pub struct IndexTemplate {
     pub portfolio_yield: Option<f64>,
     pub ytd_interest: Option<f64>,
     pub trust_balance: Option<f64>,
+    pub outstanding_checks: Option<f64>,
 }
 
 #[derive(Template)]

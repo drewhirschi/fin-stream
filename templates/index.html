@@ -6,7 +6,7 @@
 <h1 class="text-2xl font-bold mb-6">Dashboard</h1>
 
 <!-- Portfolio stats -->
-<div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+<div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
     <div class="stat bg-base-100 rounded-box shadow">
         <div class="stat-title">Portfolio Value</div>
         <div class="stat-value text-lg">
@@ -29,11 +29,24 @@
         </div>
     </div>
     <div class="stat bg-base-100 rounded-box shadow">
-        <div class="stat-title">Trust Balance</div>
+        <div class="stat-title">Cash in Trust</div>
         <div class="stat-value text-lg">
             {% match trust_balance %}
                 {% when Some with (v) %}${{ "{:.2}"|format(v) }}{% when None %}—{% endmatch %}
         </div>
+    </div>
+    <div class="stat bg-base-100 rounded-box shadow">
+        <div class="stat-title">Pending Checks</div>
+        <div class="stat-value text-lg text-warning">
+            {% match outstanding_checks %}
+                {% when Some with (v) %}{% if *v > 0.0 %}${{ "{:.2}"|format(v) }}{% else %}—{% endif %}{% when None %}—{% endmatch %}
+        </div>
+        {% match outstanding_checks %}
+            {% when Some with (v) %}{% if *v > 0.0 %}<div class="stat-desc text-warning">Payment incoming</div>{% endif %}{% when _ %}{% endmatch %}
+    </div>
+    <div class="stat bg-base-100 rounded-box shadow">
+        <div class="stat-title">Active Loans</div>
+        <div class="stat-value text-lg">{{ loans.len() }}</div>
     </div>
 </div>
 
@@ -54,20 +67,20 @@
                 <th>Rate</th>
                 <th>Balance</th>
                 <th>Payment</th>
-                <th>Next Due</th>
+                <th>Maturity</th>
                 <th>Status</th>
             </tr>
         </thead>
         <tbody>
             {% for loan in loans %}
             <tr>
-                <td class="font-mono">{{ loan.loan_account }}</td>
+                <td class="font-mono text-xs">{{ loan.loan_account }}</td>
                 <td>{{ loan.borrower_name.as_deref().unwrap_or("-") }}</td>
                 <td>{{ loan.property_address.as_deref().unwrap_or("-") }}, {{ loan.property_city.as_deref().unwrap_or("") }}</td>
                 <td>{% match loan.note_rate %}{% when Some with (r) %}{{ "{:.2}"|format(r) }}%{% when None %}—{% endmatch %}</td>
                 <td>{% match loan.principal_balance %}{% when Some with (b) %}${{ "{:.0}"|format(b) }}{% when None %}—{% endmatch %}</td>
                 <td>{% match loan.regular_payment %}{% when Some with (p) %}${{ "{:.2}"|format(p) }}{% when None %}—{% endmatch %}</td>
-                <td>{{ loan.next_payment_date.as_deref().unwrap_or("-") }}</td>
+                <td>{{ loan.maturity_date.as_deref().unwrap_or("-") }}</td>
                 <td>
                     {% match loan.is_delinquent %}
                         {% when Some with (1) %}<span class="badge badge-error badge-sm">Late</span>

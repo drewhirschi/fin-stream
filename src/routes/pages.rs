@@ -18,16 +18,16 @@ async fn index(State(state): State<Arc<AppState>>) -> templates::IndexTemplate {
     let recent_payments = db::events::get_recent_payments(&state.db, 10).await;
     let upcoming = db::events::get_upcoming_payments(&state.db, 10).await;
 
-    let snapshot: Option<(Option<f64>, Option<f64>, Option<f64>, Option<f64>)> = sqlx::query_as(
-        "SELECT portfolio_value, portfolio_yield, ytd_interest, trust_balance
+    let snapshot: Option<(Option<f64>, Option<f64>, Option<f64>, Option<f64>, Option<f64>)> = sqlx::query_as(
+        "SELECT portfolio_value, portfolio_yield, ytd_interest, trust_balance, outstanding_checks
          FROM portfolio_snapshot ORDER BY snapshot_date DESC LIMIT 1",
     )
     .fetch_optional(&state.db)
     .await
     .unwrap_or(None);
 
-    let (portfolio_value, portfolio_yield, ytd_interest, trust_balance) = snapshot
-        .unwrap_or((None, None, None, None));
+    let (portfolio_value, portfolio_yield, ytd_interest, trust_balance, outstanding_checks) = snapshot
+        .unwrap_or((None, None, None, None, None));
 
     templates::IndexTemplate {
         title: "Trust Deeds - Dashboard".into(),
@@ -38,6 +38,7 @@ async fn index(State(state): State<Arc<AppState>>) -> templates::IndexTemplate {
         portfolio_yield,
         ytd_interest,
         trust_balance,
+        outstanding_checks,
     }
 }
 
