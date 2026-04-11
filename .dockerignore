@@ -1,0 +1,12 @@
+.git
+.github
+.gstack
+.cursor
+.claude
+target
+data
+.env
+.DS_Store
+*.db
+*.db-shm
+*.db-wal
