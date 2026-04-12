@@ -156,6 +156,7 @@ pub struct LoanView {
     pub property_address: Option<String>,
     pub property_city: Option<String>,
     pub property_state: Option<String>,
+    pub featured_image_url: Option<String>,
     pub property_type: Option<String>,
     pub percent_owned: Option<f64>,
     pub note_rate: Option<f64>,
@@ -213,6 +214,7 @@ pub struct LoanWorkspacePhotoView {
     pub source_url: String,
     pub image_url: String,
     pub sort_order: i32,
+    pub is_featured: bool,
 }
 
 impl LoanWorkspaceView {

@@ -355,9 +355,17 @@ async fn run_migrations(pool: &PgPool) -> anyhow::Result<()> {
             source_url     TEXT NOT NULL,
             image_url      TEXT NOT NULL,
             sort_order     INTEGER NOT NULL DEFAULT 0,
+            is_featured    BOOLEAN NOT NULL DEFAULT FALSE,
             created_at     TEXT NOT NULL DEFAULT TO_CHAR(NOW() AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"'),
             UNIQUE(connection_id, loan_account, provider, image_url)
         )",
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        "ALTER TABLE intg.loan_workspace_photo
+         ADD COLUMN IF NOT EXISTS is_featured BOOLEAN NOT NULL DEFAULT FALSE",
     )
     .execute(pool)
     .await?;

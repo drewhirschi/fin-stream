@@ -78,6 +78,11 @@ pub async fn get_payments_for_loan(
                 metadata
          FROM stream_event
          WHERE NULLIF(NULLIF(metadata, '')::jsonb ->> 'loan_account', '') = $1
+           AND source_type = 'tmo_history'
+           AND (
+                actual_date IS NOT NULL
+                OR COALESCE((NULLIF(metadata, '')::jsonb ->> 'is_pending_print_check')::boolean, false) = true
+           )
          ORDER BY COALESCE(actual_date, expected_date, scheduled_date) DESC, id DESC
          LIMIT $2",
     )

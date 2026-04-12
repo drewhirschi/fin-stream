@@ -33,6 +33,10 @@ pub fn router() -> Router<Arc<AppState>> {
             "/integrations/{slug}/loans/{loan_account}/workspace/photos",
             post(upload_loan_workspace_photos).layer(DefaultBodyLimit::max(25 * 1024 * 1024)),
         )
+        .route(
+            "/integrations/{slug}/loans/{loan_account}/workspace/photos/{photo_id}/feature",
+            post(set_featured_loan_workspace_photo),
+        )
         .route("/integrations/{slug}/payments", get(integration_payments))
         .route("/integrations/{slug}/sync", get(integration_sync))
         .route("/integrations/{slug}/debug", get(integration_debug))
@@ -47,6 +51,7 @@ struct LoanWorkspaceParams {
     workspace_error: Option<i32>,
     photo_uploaded: Option<i32>,
     photo_error: Option<i32>,
+    feature_saved: Option<i32>,
 }
 
 #[derive(Deserialize, Default)]
@@ -166,7 +171,7 @@ async fn integration_payments(
         title: format!("Trust Deeds - {} Payments", connection.name),
         current_section: "payments".into(),
         payments: if connection.slug == "tmo" {
-            db::events::get_payments(&state.db, 100).await
+            db::integrations::list_recent_tmo_import_payments(&state.db, connection.id, 100).await
         } else {
             Vec::new()
         },
@@ -196,23 +201,17 @@ async fn integration_loan_detail(
         .into_response();
     };
 
-    let payment_history = db::events::get_payments_for_loan(&state.db, &loan_account, 36).await;
-    let on_time_count = payment_history
-        .iter()
-        .filter(|payment| payment.timing_label == "Paid on time")
-        .count();
-    let late_count = payment_history
-        .iter()
-        .filter(|payment| {
-            payment.timing_label == "Paid late"
-                || payment.timing_label == "Expected late"
-                || payment.timing_label == "Overdue"
-        })
-        .count();
-    let pending_count = payment_history
-        .iter()
-        .filter(|payment| payment.state_label == "Scheduled" || payment.state_label == "Expected")
-        .count();
+    let payment_history = if connection.slug == "tmo" {
+        db::integrations::list_tmo_import_payments_for_loan(
+            &state.db,
+            connection.id,
+            &loan_account,
+            36,
+        )
+        .await
+    } else {
+        Vec::new()
+    };
     let workspace = db::workspaces::get_loan_workspace(&state.db, connection.id, &loan_account)
         .await
         .unwrap_or_else(|| crate::models::LoanWorkspaceView::empty(loan_account.clone()));
@@ -228,13 +227,11 @@ async fn integration_loan_detail(
         workspace,
         workspace_photos,
         payment_history,
-        on_time_count,
-        late_count,
-        pending_count,
         workspace_saved: params.workspace_saved == Some(1),
         workspace_error: params.workspace_error == Some(1),
         photo_uploaded: params.photo_uploaded == Some(1),
         photo_error: params.photo_error == Some(1),
+        feature_saved: params.feature_saved == Some(1),
         connection,
     }
     .into_response()
@@ -458,6 +455,31 @@ async fn upload_loan_workspace_photos(
     }
 
     Redirect::to(&format!("{destination}?photo_uploaded=1")).into_response()
+}
+
+async fn set_featured_loan_workspace_photo(
+    State(state): State<Arc<AppState>>,
+    Path((slug, loan_account, photo_id)): Path<(String, String, i64)>,
+) -> axum::response::Response {
+    let destination = format!("/integrations/{slug}/loans/{loan_account}");
+
+    let Some(connection) = connection_or_404(&state, &slug).await else {
+        return not_found_for_integration(&slug).into_response();
+    };
+
+    if let Err(error) =
+        db::workspaces::set_featured_photo(&state.db, connection.id, &loan_account, photo_id).await
+    {
+        tracing::error!(
+            "failed to mark featured photo for loan {} photo {}: {}",
+            loan_account,
+            photo_id,
+            error
+        );
+        return Redirect::to(&format!("{destination}?photo_error=1")).into_response();
+    }
+
+    Redirect::to(&format!("{destination}?feature_saved=1")).into_response()
 }
 
 async fn integration_sync(

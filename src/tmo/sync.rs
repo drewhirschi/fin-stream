@@ -220,9 +220,21 @@ async fn run_sync_inner(pool: &PgPool) -> anyhow::Result<SyncSummary> {
             "history:{}:{}:{}",
             payment.loan_account, check_date, amount_cents
         );
-        let status = "received";
-        let expected_date: Option<&str> = None;
-        let actual_date = Some(check_date);
+        let status = if is_pending_print_check {
+            "confirmed"
+        } else {
+            "received"
+        };
+        let expected_date = if is_pending_print_check {
+            Some(check_date)
+        } else {
+            None
+        };
+        let actual_date = if is_pending_print_check {
+            None
+        } else {
+            Some(check_date)
+        };
 
         let metadata = serde_json::json!({
             "check_number": payment.check_number,

@@ -150,9 +150,9 @@ pub async fn replace_loan_workspace_photos(
     for photo in photos {
         sqlx::query(
             "INSERT INTO intg.loan_workspace_photo (
-                connection_id, loan_account, provider, caption, source_url, image_url, sort_order
+                connection_id, loan_account, provider, caption, source_url, image_url, sort_order, is_featured
              )
-             VALUES ($1, $2, $3, $4, $5, $6, $7)",
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
         )
         .bind(connection_id)
         .bind(loan_account)
@@ -161,6 +161,7 @@ pub async fn replace_loan_workspace_photos(
         .bind(photo.source_url)
         .bind(photo.image_url)
         .bind(photo.sort_order)
+        .bind(photo.is_featured)
         .execute(&mut *tx)
         .await?;
     }
@@ -175,10 +176,10 @@ pub async fn list_loan_workspace_photos(
     loan_account: &str,
 ) -> anyhow::Result<Vec<LoanWorkspacePhotoView>> {
     let photos = sqlx::query_as(
-        "SELECT id, loan_account, provider, caption, source_url, image_url, sort_order
+        "SELECT id, loan_account, provider, caption, source_url, image_url, sort_order, is_featured
          FROM intg.loan_workspace_photo
          WHERE connection_id = $1 AND loan_account = $2
-         ORDER BY sort_order ASC, id ASC",
+         ORDER BY is_featured DESC, sort_order ASC, id ASC",
     )
     .bind(connection_id)
     .bind(loan_account)
@@ -218,9 +219,9 @@ pub async fn insert_loan_workspace_photo(
 ) -> anyhow::Result<()> {
     sqlx::query(
         "INSERT INTO intg.loan_workspace_photo (
-            connection_id, loan_account, provider, caption, source_url, image_url, sort_order
+            connection_id, loan_account, provider, caption, source_url, image_url, sort_order, is_featured
          )
-         VALUES ($1, $2, $3, $4, $5, $6, $7)",
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
     )
     .bind(connection_id)
     .bind(loan_account)
@@ -229,9 +230,43 @@ pub async fn insert_loan_workspace_photo(
     .bind(source_url)
     .bind(image_url)
     .bind(sort_order)
+    .bind(false)
     .execute(pool)
     .await?;
 
+    Ok(())
+}
+
+pub async fn set_featured_photo(
+    pool: &PgPool,
+    connection_id: i64,
+    loan_account: &str,
+    photo_id: i64,
+) -> anyhow::Result<()> {
+    let mut tx = pool.begin().await?;
+
+    sqlx::query(
+        "UPDATE intg.loan_workspace_photo
+         SET is_featured = FALSE
+         WHERE connection_id = $1 AND loan_account = $2",
+    )
+    .bind(connection_id)
+    .bind(loan_account)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        "UPDATE intg.loan_workspace_photo
+         SET is_featured = TRUE
+         WHERE id = $3 AND connection_id = $1 AND loan_account = $2",
+    )
+    .bind(connection_id)
+    .bind(loan_account)
+    .bind(photo_id)
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
     Ok(())
 }
 
@@ -242,4 +277,5 @@ pub struct LoanWorkspacePhotoInsert<'a> {
     pub source_url: &'a str,
     pub image_url: &'a str,
     pub sort_order: i32,
+    pub is_featured: bool,
 }

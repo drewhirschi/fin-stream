@@ -24,21 +24,54 @@
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             {% for loan in loans %}
             <a href="/integrations/{{ connection.slug }}/loans/{{ loan.loan_account }}"
-               class="interactive-card card bg-base-100 shadow-sm border border-base-300 no-underline">
-                <div class="card-body">
-                    <div class="flex justify-between items-start gap-3">
-                        <div>
-                            <h3 class="card-title text-base">{{ loan.borrower_name.as_deref().unwrap_or("Unknown") }}</h3>
-                            <p class="label-dim text-sm">
+               class="interactive-card card overflow-hidden bg-base-100 shadow-sm border border-base-300 no-underline">
+                {% match loan.featured_image_url %}
+                    {% when Some with (image_url) %}
+                    <div class="relative h-48 w-full overflow-hidden bg-base-200">
+                        <img src="{{ image_url }}"
+                             alt="{{ loan.borrower_name.as_deref().unwrap_or("Loan property") }}"
+                             class="h-full w-full object-cover" />
+                        <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-black/35 to-transparent"></div>
+                        <div class="absolute left-4 right-4 top-4 flex items-start justify-between gap-3">
+                            <div class="badge badge-neutral border-white/20 bg-black/45 text-white font-mono">{{ loan.loan_account }}</div>
+                            {% match loan.is_delinquent %}
+                                {% when Some with (1) %}<span class="badge badge-error">Late</span>
+                                {% when _ %}<span class="badge badge-success">Current</span>
+                            {% endmatch %}
+                        </div>
+                        <div class="absolute inset-x-0 bottom-0 px-4 pb-4 text-white [text-shadow:0_2px_10px_rgba(0,0,0,0.6)]">
+                            <h3 class="card-title text-lg text-white">
                                 {{ loan.property_address.as_deref().unwrap_or("") }},
                                 {{ loan.property_city.as_deref().unwrap_or("") }}
                                 {{ loan.property_state.as_deref().unwrap_or("") }}
-                            </p>
+                            </h3>
+                            <p class="mt-1 text-sm text-white/92">{{ loan.borrower_name.as_deref().unwrap_or("Unknown") }}</p>
                         </div>
-                        <span class="badge badge-outline font-mono">{{ loan.loan_account }}</span>
                     </div>
+                    {% when None %}
+                    <div class="card-body pb-4">
+                        <div class="flex justify-between items-start gap-3">
+                            <div>
+                                <h3 class="card-title text-base">
+                                    {{ loan.property_address.as_deref().unwrap_or("") }},
+                                    {{ loan.property_city.as_deref().unwrap_or("") }}
+                                    {{ loan.property_state.as_deref().unwrap_or("") }}
+                                </h3>
+                                <p class="label-dim text-sm">{{ loan.borrower_name.as_deref().unwrap_or("Unknown") }}</p>
+                            </div>
+                            <div class="flex flex-col items-end gap-2">
+                                <span class="badge badge-outline font-mono">{{ loan.loan_account }}</span>
+                                {% match loan.is_delinquent %}
+                                    {% when Some with (1) %}<span class="badge badge-error badge-sm">Late</span>
+                                    {% when _ %}<span class="badge badge-success badge-sm">Current</span>
+                                {% endmatch %}
+                            </div>
+                        </div>
+                    </div>
+                {% endmatch %}
 
-                    <div class="grid grid-cols-2 gap-3 mt-4 text-sm">
+                <div class="card-body pt-4">
+                    <div class="grid grid-cols-2 gap-3 text-sm">
                         <div>
                             <span class="label-dim">Balance</span>
                             <div class="font-semibold">

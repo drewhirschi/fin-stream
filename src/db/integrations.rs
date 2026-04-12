@@ -494,6 +494,46 @@ pub async fn list_recent_tmo_import_payments(
     .unwrap_or_default()
 }
 
+pub async fn list_tmo_import_payments_for_loan(
+    pool: &PgPool,
+    connection_id: i64,
+    loan_account: &str,
+    limit: i32,
+) -> Vec<TmoImportPaymentView> {
+    sqlx::query_as(
+        "SELECT id,
+                connection_id,
+                external_id,
+                loan_account,
+                borrower_name,
+                property_name,
+                check_number,
+                check_date::text as check_date,
+                amount,
+                service_fee,
+                interest,
+                principal,
+                charges,
+                late_charges,
+                other,
+                processing_state,
+                normalized_event_source_id,
+                raw_payload,
+                updated_at
+         FROM intg.tmo_import_payment
+         WHERE connection_id = $1
+           AND loan_account = $2
+         ORDER BY check_date DESC, id DESC
+         LIMIT $3",
+    )
+    .bind(connection_id)
+    .bind(loan_account)
+    .bind(limit)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default()
+}
+
 pub async fn mark_payment_normalized(
     pool: &PgPool,
     payment_id: i64,

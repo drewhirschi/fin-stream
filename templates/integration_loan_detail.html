@@ -2,7 +2,7 @@
 
 {% block integration_breadcrumb_suffix %}
 <span class="label-dim">/</span>
-<span>Loan</span>
+<a href="/integrations/{{ connection.slug }}/loans" class="link link-hover">Loans</a>
 <span class="label-dim">/</span>
 <span>{{ loan.borrower_name.as_deref().unwrap_or("Unknown borrower") }}</span>
 {% endblock %}
@@ -20,6 +20,9 @@
     {% endif %}
     {% if photo_error %}
     <div class="alert alert-error shadow-sm">Could not upload the photo. Try a JPG, PNG, or WebP file.</div>
+    {% endif %}
+    {% if feature_saved %}
+    <div class="alert alert-success shadow-sm">Feature image updated.</div>
     {% endif %}
 
     <div class="card bg-base-100 shadow-sm border border-base-300">
@@ -42,21 +45,6 @@
                     {% endmatch %}
                 </div>
             </div>
-        </div>
-    </div>
-
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div class="stat bg-base-100 rounded-box shadow-sm border border-base-300">
-            <div class="stat-title">On-time payments</div>
-            <div class="stat-value text-2xl">{{ on_time_count }}</div>
-        </div>
-        <div class="stat bg-base-100 rounded-box shadow-sm border border-base-300">
-            <div class="stat-title">Late or overdue</div>
-            <div class="stat-value text-2xl">{{ late_count }}</div>
-        </div>
-        <div class="stat bg-base-100 rounded-box shadow-sm border border-base-300">
-            <div class="stat-title">Pending</div>
-            <div class="stat-value text-2xl">{{ pending_count }}</div>
         </div>
     </div>
 
@@ -124,7 +112,7 @@
         <div class="card bg-base-100 shadow-sm border border-base-300">
             <div class="card-body">
                 <h3 class="card-title">Payment Timeline</h3>
-                <p class="label-dim text-sm">Recent payment activity imported for this loan.</p>
+                <p class="label-dim text-sm">Raw payment history imported from {{ connection.name }} for this loan.</p>
 
                 {% if payment_history.is_empty() %}
                 <div class="alert alert-info mt-4">No payment history found for this loan yet.</div>
@@ -136,16 +124,20 @@
                                 <th>Date</th>
                                 <th>Check #</th>
                                 <th>Amount</th>
+                                <th>Service Fee</th>
+                                <th>Interest</th>
+                                <th>Principal</th>
                             </tr>
                         </thead>
                         <tbody>
                             {% for payment in payment_history %}
                             <tr>
-                                <td>
-                                    {{ payment.effective_date|date }}
-                                </td>
-                                <td class="font-mono text-xs">{{ payment.check_number.as_deref().unwrap_or("—") }}</td>
+                                <td>{{ payment.check_date|date }}</td>
+                                <td class="font-mono text-xs">{% if payment.check_number.trim().is_empty() %}—{% else %}{{ payment.check_number }}{% endif %}</td>
                                 <td>${{ payment.amount|money }}</td>
+                                <td>${{ payment.service_fee|money }}</td>
+                                <td>${{ payment.interest|money }}</td>
+                                <td>${{ payment.principal|money }}</td>
                             </tr>
                             {% endfor %}
                         </tbody>
@@ -182,15 +174,29 @@
             {% else %}
             <div class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
                 {% for photo in workspace_photos %}
-                <a href="{{ photo.source_url }}" target="_blank" rel="noopener noreferrer" class="group overflow-hidden rounded-box border border-base-300 bg-base-200/40">
-                    <img src="{{ photo.image_url }}"
-                         alt="{{ photo.caption.as_deref().unwrap_or("Property photo") }}"
-                         class="h-56 w-full object-cover transition duration-200 group-hover:scale-[1.02]" />
+                <div class="overflow-hidden rounded-box border border-base-300 bg-base-200/40">
+                    <a href="{{ photo.source_url }}" target="_blank" rel="noopener noreferrer" class="group block">
+                        <img src="{{ photo.image_url }}"
+                             alt="{{ photo.caption.as_deref().unwrap_or("Property photo") }}"
+                             class="h-56 w-full object-cover transition duration-200 group-hover:scale-[1.02]" />
+                    </a>
                     <div class="flex items-center justify-between gap-3 px-4 py-3 text-sm">
-                        <span class="font-medium capitalize">{{ photo.provider }}</span>
-                        <span class="label-dim">Open source</span>
+                        <div class="flex items-center gap-2">
+                            <span class="font-medium capitalize">{{ photo.provider }}</span>
+                            {% if photo.is_featured %}
+                            <span class="badge badge-primary badge-sm">Featured</span>
+                            {% endif %}
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <a href="{{ photo.source_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-ghost btn-xs">Open source</a>
+                            {% if !photo.is_featured %}
+                            <form method="post" action="/integrations/{{ connection.slug }}/loans/{{ loan.loan_account }}/workspace/photos/{{ photo.id }}/feature">
+                                <button type="submit" class="btn btn-outline btn-xs">Set featured</button>
+                            </form>
+                            {% endif %}
+                        </div>
                     </div>
-                </a>
+                </div>
                 {% endfor %}
             </div>
             {% endif %}

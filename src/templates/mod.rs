@@ -61,14 +61,12 @@ pub struct IntegrationLoanDetailTemplate {
     pub loan: LoanDetailView,
     pub workspace: LoanWorkspaceView,
     pub workspace_photos: Vec<LoanWorkspacePhotoView>,
-    pub payment_history: Vec<LoanPaymentHistoryView>,
-    pub on_time_count: usize,
-    pub late_count: usize,
-    pub pending_count: usize,
+    pub payment_history: Vec<TmoImportPaymentView>,
     pub workspace_saved: bool,
     pub workspace_error: bool,
     pub photo_uploaded: bool,
     pub photo_error: bool,
+    pub feature_saved: bool,
 }
 
 #[derive(Template)]
@@ -77,7 +75,7 @@ pub struct IntegrationPaymentsTemplate {
     pub title: String,
     pub connection: IntegrationConnectionView,
     pub current_section: String,
-    pub payments: Vec<PaymentView>,
+    pub payments: Vec<TmoImportPaymentView>,
 }
 
 #[derive(Template)]

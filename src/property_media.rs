@@ -120,6 +120,7 @@ pub async fn enrich_loan_workspace(
             source_url: &photo.source_url,
             image_url: &photo.image_url,
             sort_order: photo.sort_order,
+            is_featured: photo.sort_order == 0,
         })
         .collect();
 

@@ -6,6 +6,14 @@ use crate::models::{LoanDetailView, LoanView};
 pub async fn get_active_loans(pool: &PgPool) -> Vec<LoanView> {
     sqlx::query_as(
         "SELECT loan_account, borrower_name, property_address, property_city, property_state,
+                (
+                    SELECT photo.image_url
+                    FROM intg.loan_workspace_photo photo
+                    WHERE photo.connection_id = intg.tmo_import_loan.connection_id
+                      AND photo.loan_account = intg.tmo_import_loan.loan_account
+                    ORDER BY photo.is_featured DESC, photo.sort_order ASC, photo.id ASC
+                    LIMIT 1
+                ) AS featured_image_url,
                 property_type, percent_owned, note_rate, principal_balance, regular_payment,
                 maturity_date::text as maturity_date,
                 next_payment_date::text as next_payment_date,
