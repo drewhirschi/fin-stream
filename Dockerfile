@@ -8,6 +8,9 @@ RUN cargo install cargo-chef --locked
 FROM chef AS planner
 COPY Cargo.toml Cargo.lock ./
 COPY askama.toml ./
+# cargo metadata needs target files present to resolve package targets.
+COPY src/lib.rs src/main.rs ./src/
+COPY src/bin ./src/bin
 RUN cargo chef prepare --recipe-path recipe.json
 
 FROM chef AS builder
