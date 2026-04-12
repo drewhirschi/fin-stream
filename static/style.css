@@ -3,3 +3,53 @@
     .drawer-content { margin-left: 0 !important; }
     * { background: white !important; color: black !important; }
 }
+
+.app-sidebar .menu li > .nav-link,
+.integration-sidebar .menu li > .nav-link {
+    position: relative;
+    border-radius: 0.9rem;
+    color: color-mix(in srgb, var(--fallback-bc, oklch(var(--bc)/1)) 72%, transparent) !important;
+    transition: background-color 0.15s ease, color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.app-sidebar .menu li > .nav-link:hover,
+.integration-sidebar .menu li > .nav-link:hover {
+    background: color-mix(in srgb, var(--fallback-b3, oklch(var(--b3)/1)) 85%, transparent) !important;
+    color: var(--fallback-bc, oklch(var(--bc)/1)) !important;
+}
+
+.app-sidebar .menu li > .nav-link.active,
+.integration-sidebar .menu li > .nav-link.active {
+    background: linear-gradient(135deg, color-mix(in srgb, var(--fallback-p, oklch(var(--p)/1)) 22%, transparent), color-mix(in srgb, var(--fallback-b3, oklch(var(--b3)/1)) 92%, transparent));
+    color: var(--fallback-bc, oklch(var(--bc)/1)) !important;
+    font-weight: 700;
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fallback-p, oklch(var(--p)/1)) 28%, transparent);
+}
+
+.app-sidebar .menu li > .nav-link.active::before,
+.integration-sidebar .menu li > .nav-link.active::before {
+    content: "";
+    position: absolute;
+    left: 0.55rem;
+    top: 0.45rem;
+    bottom: 0.45rem;
+    width: 0.22rem;
+    border-radius: 999px;
+    background: var(--fallback-p, oklch(var(--p)/1));
+    box-shadow: 0 0 10px color-mix(in srgb, var(--fallback-p, oklch(var(--p)/1)) 60%, transparent);
+}
+
+.interactive-card {
+    text-decoration: none;
+    transition: border-color 0.18s ease;
+}
+
+.interactive-card:hover,
+.interactive-card:focus-visible {
+    border-color: var(--fallback-p, oklch(var(--p)/1));
+}
+
+.interactive-card:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--fallback-p, oklch(var(--p)/1)) 35%, white);
+    outline-offset: 2px;
+}

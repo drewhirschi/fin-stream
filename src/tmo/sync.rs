@@ -1,16 +1,17 @@
-use sqlx::SqlitePool;
+use sqlx::PgPool;
 
-use crate::models::*;
+const TMO_CONNECTION_SLUG: &str = "tmo";
 
 /// Run a full sync: login, fetch overview, portfolio, loan details, payment history.
 /// Returns a SyncLog-like summary.
-pub async fn run_full_sync(pool: &SqlitePool) -> anyhow::Result<SyncSummary> {
+pub async fn run_full_sync(pool: &PgPool) -> anyhow::Result<SyncSummary> {
     let now = chrono::Utc::now().to_rfc3339();
 
     // Insert sync_log row as "running"
     let (log_id,): (i64,) = sqlx::query_as(
-        "INSERT INTO sync_log (started_at, status) VALUES (?, 'running') RETURNING id",
+        "INSERT INTO sync_log (connection_slug, started_at, status) VALUES ($1, $2, 'running') RETURNING id",
     )
+    .bind(TMO_CONNECTION_SLUG)
     .bind(&now)
     .fetch_one(pool)
     .await?;
@@ -22,9 +23,9 @@ pub async fn run_full_sync(pool: &SqlitePool) -> anyhow::Result<SyncSummary> {
     match &result {
         Ok(summary) => {
             sqlx::query(
-                "UPDATE sync_log SET finished_at = ?, status = 'success',
-                 endpoints_hit = ?, events_upserted = ?, loans_upserted = ?, snapshots_created = ?
-                 WHERE id = ?",
+                "UPDATE sync_log SET finished_at = $1, status = 'success',
+                 endpoints_hit = $2, events_upserted = $3, loans_upserted = $4, snapshots_created = $5
+                 WHERE id = $6",
             )
             .bind(&finished)
             .bind(&summary.endpoints_hit)
@@ -36,8 +37,14 @@ pub async fn run_full_sync(pool: &SqlitePool) -> anyhow::Result<SyncSummary> {
             .await?;
         }
         Err(e) => {
+            let _ = crate::db::integrations::mark_connection_error(
+                pool,
+                TMO_CONNECTION_SLUG,
+                &e.to_string(),
+            )
+            .await;
             sqlx::query(
-                "UPDATE sync_log SET finished_at = ?, status = 'error', error_message = ? WHERE id = ?",
+                "UPDATE sync_log SET finished_at = $1, status = 'error', error_message = $2 WHERE id = $3",
             )
             .bind(&finished)
             .bind(e.to_string())
@@ -57,31 +64,66 @@ pub struct SyncSummary {
     pub snapshots_created: i32,
 }
 
-async fn run_sync_inner(pool: &SqlitePool) -> anyhow::Result<SyncSummary> {
-    let client = crate::tmo::client::create_client().await?;
+async fn run_sync_inner(pool: &PgPool) -> anyhow::Result<SyncSummary> {
     let stream_id = crate::db::ensure_trustee_stream(pool).await?;
     let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+    let connection_id = crate::db::integrations::ensure_connection(
+        pool,
+        TMO_CONNECTION_SLUG,
+        "The Mortgage Office",
+        "mortgage_office",
+        None,
+    )
+    .await?;
+    let credential =
+        crate::db::integrations::get_or_bootstrap_tmo_credential(pool, connection_id).await?;
+    let connection_metadata = serde_json::json!({
+        "company_id": credential.company_id,
+        "account": credential.account_number,
+    })
+    .to_string();
+    crate::db::integrations::update_connection_metadata(
+        pool,
+        TMO_CONNECTION_SLUG,
+        &connection_metadata,
+    )
+    .await?;
+    let client = crate::tmo::client::TmoClient::login(
+        &credential.company_id,
+        &credential.account_number,
+        &credential.pin,
+    )
+    .await?;
 
     let mut endpoints = Vec::new();
     let mut loans_upserted = 0;
     let mut events_upserted = 0;
     let mut snapshots_created = 0;
 
-    // Clean up stale projected events before generating new ones
+    // Clean up stale projected events and remove legacy TMO payment projections.
     let stale_count = crate::db::events::cleanup_stale_projections(pool).await?;
     if stale_count > 0 {
         tracing::info!("cleaned up {} stale projected events", stale_count);
+    }
+    let removed_tmo_projections = crate::db::events::cleanup_tmo_projections(pool).await?;
+    if removed_tmo_projections > 0 {
+        tracing::info!(
+            "removed {} legacy TMO projected payment events",
+            removed_tmo_projections
+        );
     }
 
     // 1. Overview → portfolio_snapshot
     tracing::info!("syncing overview...");
     let overview = client.get_overview().await?;
     endpoints.push("overview");
+    crate::db::integrations::upsert_tmo_import_overview(pool, connection_id, &today, &overview)
+        .await?;
 
     let inserted = sqlx::query(
         "INSERT INTO portfolio_snapshot (snapshot_date, portfolio_value, portfolio_yield, portfolio_count,
          ytd_interest, ytd_principal, trust_balance, outstanding_checks, service_fees)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+         VALUES ($1::date, $2, $3, $4, $5, $6, $7, $8, $9)
          ON CONFLICT(snapshot_date) DO UPDATE SET
            portfolio_value = excluded.portfolio_value,
            portfolio_yield = excluded.portfolio_yield,
@@ -91,7 +133,7 @@ async fn run_sync_inner(pool: &SqlitePool) -> anyhow::Result<SyncSummary> {
            trust_balance = excluded.trust_balance,
            outstanding_checks = excluded.outstanding_checks,
            service_fees = excluded.service_fees,
-           synced_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')",
+           synced_at = TO_CHAR(NOW() AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"')",
     )
     .bind(&today)
     .bind(overview.portfolio_value)
@@ -112,50 +154,13 @@ async fn run_sync_inner(pool: &SqlitePool) -> anyhow::Result<SyncSummary> {
     tracing::info!("syncing portfolio...");
     let loans = client.get_portfolio().await?;
     endpoints.push("portfolio");
-
     for loan in &loans {
-        sqlx::query(
-            "INSERT INTO tmo_loan (loan_account, stream_id, borrower_name, property_address, property_city,
-             property_state, property_zip, percent_owned, note_rate, principal_balance,
-             regular_payment, maturity_date, next_payment_date, interest_paid_to,
-             term_left_months, is_delinquent, is_active, last_synced_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-             ON CONFLICT(loan_account) DO UPDATE SET
-               borrower_name = excluded.borrower_name,
-               property_address = excluded.property_address,
-               property_city = excluded.property_city,
-               property_state = excluded.property_state,
-               property_zip = excluded.property_zip,
-               percent_owned = excluded.percent_owned,
-               note_rate = excluded.note_rate,
-               principal_balance = excluded.principal_balance,
-               regular_payment = excluded.regular_payment,
-               maturity_date = excluded.maturity_date,
-               next_payment_date = excluded.next_payment_date,
-               interest_paid_to = excluded.interest_paid_to,
-               term_left_months = excluded.term_left_months,
-               is_delinquent = excluded.is_delinquent,
-               is_active = 1,
-               last_synced_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
-               updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')",
+        crate::db::integrations::upsert_tmo_import_loan_summary(
+            pool,
+            connection_id,
+            stream_id,
+            loan,
         )
-        .bind(&loan.loan_account)
-        .bind(stream_id)
-        .bind(&loan.borrower_name)
-        .bind(&loan.primary_street)
-        .bind(&loan.primary_city)
-        .bind(&loan.primary_state)
-        .bind(&loan.primary_zip)
-        .bind(loan.percent_owned)
-        .bind(loan.interest_rate)
-        .bind(loan.loan_balance)
-        .bind(loan.regular_payment)
-        .bind(&loan.maturity_date)
-        .bind(&loan.next_payment_date)
-        .bind(&loan.interest_paid_to_date)
-        .bind(loan.term_left)
-        .bind(loan.is_delinquent)
-        .execute(pool)
         .await?;
         loans_upserted += 1;
     }
@@ -165,28 +170,28 @@ async fn run_sync_inner(pool: &SqlitePool) -> anyhow::Result<SyncSummary> {
     for loan in &loans {
         match client.get_loan_detail(&loan.loan_account).await {
             Ok(detail) => {
-                sqlx::query(
-                    "UPDATE tmo_loan SET
-                       property_type = ?, property_priority = ?, occupancy = ?,
-                       appraised_value = ?, ltv = ?, original_balance = ?,
-                       loan_type = ?, payment_frequency = ?,
-                       detail_synced_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-                     WHERE loan_account = ?",
+                crate::db::integrations::upsert_tmo_import_loan_detail(
+                    pool,
+                    connection_id,
+                    &detail,
                 )
-                .bind(&detail.property_type)
-                .bind(detail.property_priority)
-                .bind(&detail.occupancy)
-                .bind(detail.appraised_value)
-                .bind(detail.ltv)
-                .bind(detail.original_balance)
-                .bind(detail.loan_type)
-                .bind(&detail.payment_frequency)
-                .bind(&detail.loan_account)
-                .execute(pool)
                 .await?;
+                if let Err(error) =
+                    crate::property_media::enrich_loan_workspace(pool, connection_id, &detail).await
+                {
+                    tracing::warn!(
+                        "property media enrichment failed for loan {}: {}",
+                        detail.loan_account,
+                        error
+                    );
+                }
             }
             Err(e) => {
-                tracing::warn!("failed to fetch detail for loan {}: {}", loan.loan_account, e);
+                tracing::warn!(
+                    "failed to fetch detail for loan {}: {}",
+                    loan.loan_account,
+                    e
+                );
             }
         }
     }
@@ -196,15 +201,32 @@ async fn run_sync_inner(pool: &SqlitePool) -> anyhow::Result<SyncSummary> {
     tracing::info!("syncing payment history...");
     let payments = client.get_history(None).await?;
     endpoints.push("history");
+    crate::db::integrations::replace_tmo_import_payments(pool, connection_id, &payments).await?;
+    let mut history_tx = pool.begin().await?;
 
-    for payment in &payments {
-        let label = format!(
-            "{} - {}",
-            payment.borrower_name, payment.property_name
+    sqlx::query("DELETE FROM stream_event WHERE stream_id = $1 AND source_type = 'tmo_history'")
+        .bind(stream_id)
+        .execute(&mut *history_tx)
+        .await?;
+
+    for payment in crate::db::integrations::list_tmo_import_payments(pool, connection_id).await? {
+        let label = format!("{} - {}", payment.borrower_name, payment.property_name);
+        let check_date = payment.check_date.as_str();
+        let normalized_check_number = payment.check_number.trim();
+        let is_pending_print_check = normalized_check_number.is_empty()
+            || normalized_check_number.eq_ignore_ascii_case("print");
+        let amount_cents = (payment.amount * 100.0).round() as i64;
+        let source_id = format!(
+            "history:{}:{}:{}",
+            payment.loan_account, check_date, amount_cents
         );
+        let status = "received";
+        let expected_date: Option<&str> = None;
+        let actual_date = Some(check_date);
 
         let metadata = serde_json::json!({
             "check_number": payment.check_number,
+            "is_pending_print_check": is_pending_print_check,
             "interest": payment.interest,
             "principal": payment.principal,
             "service_fee": payment.service_fee,
@@ -212,50 +234,51 @@ async fn run_sync_inner(pool: &SqlitePool) -> anyhow::Result<SyncSummary> {
             "late_charges": payment.late_charges,
             "other": payment.other,
             "loan_account": payment.loan_account,
+            "tmo_check_date": check_date,
         });
 
-        // Extract just the date part from the datetime string
-        let check_date = payment.check_date.split('T').next().unwrap_or(&payment.check_date);
-
         let result = sqlx::query(
-            "INSERT INTO stream_event (stream_id, label, scheduled_date, actual_date, amount, status,
+            "INSERT INTO stream_event (stream_id, label, scheduled_date, expected_date, actual_date, amount, status,
              source_id, source_type, metadata)
-             VALUES (?, ?, ?, ?, ?, 'received', ?, 'tmo_history', ?)
+             VALUES ($1, $2, $3::date, $4::date, $5::date, $6, $7, $8, 'tmo_history', $9)
              ON CONFLICT(stream_id, source_type, source_id) DO UPDATE SET
                label = excluded.label,
+               scheduled_date = excluded.scheduled_date,
+               expected_date = excluded.expected_date,
                actual_date = excluded.actual_date,
                amount = excluded.amount,
+               status = excluded.status,
                metadata = excluded.metadata,
-               updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')",
+               updated_at = TO_CHAR(NOW() AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"')",
         )
         .bind(stream_id)
         .bind(&label)
         .bind(check_date)
-        .bind(check_date)
+        .bind(expected_date)
+        .bind(actual_date)
         .bind(payment.amount)
-        .bind(&payment.check_number)
+        .bind(status)
+        .bind(&source_id)
         .bind(metadata.to_string())
-        .execute(pool)
+        .execute(&mut *history_tx)
         .await?;
 
         if result.rows_affected() > 0 {
             events_upserted += 1;
         }
+
+        crate::db::integrations::mark_payment_normalized(pool, payment.id, &source_id).await?;
     }
 
-    // 5. Estimate service fee from historical payments for projection accuracy
-    let avg_service_fee = crate::db::forecasts::estimate_service_fee(pool).await;
-    tracing::info!("estimated avg service fee: ${:.2}", avg_service_fee);
-
-    // 6. Generate projected future events from loan schedules
-    tracing::info!("generating projected events...");
-    let projected = generate_projected_events(pool, stream_id, &loans, avg_service_fee).await?;
-    events_upserted += projected;
+    history_tx.commit().await?;
 
     tracing::info!(
         "sync complete: {} loans, {} events, {} snapshots",
-        loans_upserted, events_upserted, snapshots_created
+        loans_upserted,
+        events_upserted,
+        snapshots_created
     );
+    crate::db::integrations::mark_connection_synced(pool, TMO_CONNECTION_SLUG).await?;
 
     Ok(SyncSummary {
         endpoints_hit: endpoints.join(","),
@@ -263,75 +286,4 @@ async fn run_sync_inner(pool: &SqlitePool) -> anyhow::Result<SyncSummary> {
         events_upserted,
         snapshots_created,
     })
-}
-
-/// Generate projected future payment events for the next 6 months based on loan data.
-/// Subtracts the estimated average service fee from each projected payment for accuracy.
-async fn generate_projected_events(
-    pool: &SqlitePool,
-    stream_id: i64,
-    loans: &[TmoLoanSummary],
-    avg_service_fee: f64,
-) -> anyhow::Result<i32> {
-    let mut count = 0;
-    let today = chrono::Utc::now().date_naive();
-
-    for loan in loans {
-        // Parse the next payment date
-        let next_date_str = loan.next_payment_date.split('T').next().unwrap_or(&loan.next_payment_date);
-        let Ok(mut date) = chrono::NaiveDate::parse_from_str(next_date_str, "%Y-%m-%d") else {
-            tracing::warn!("could not parse next_payment_date for loan {}: {}", loan.loan_account, loan.next_payment_date);
-            continue;
-        };
-
-        // Parse maturity date
-        let maturity_str = loan.maturity_date.split('T').next().unwrap_or(&loan.maturity_date);
-        let maturity = chrono::NaiveDate::parse_from_str(maturity_str, "%Y-%m-%d").unwrap_or(
-            today + chrono::Duration::days(365),
-        );
-
-        let label = format!(
-            "{} - {}, {} {}",
-            loan.borrower_name, loan.primary_street, loan.primary_city, loan.primary_state
-        );
-
-        // Generate monthly events for up to 6 months into the future
-        let horizon = today + chrono::Duration::days(180);
-
-        while date <= horizon && date <= maturity {
-            if date >= today {
-                let source_id = format!("projected:{}:{}", loan.loan_account, date);
-
-                let result = sqlx::query(
-                    "INSERT INTO stream_event (stream_id, label, scheduled_date, amount, status,
-                     source_id, source_type, metadata)
-                     VALUES (?, ?, ?, ?, 'projected', ?, 'schedule', ?)
-                     ON CONFLICT(stream_id, source_type, source_id) DO UPDATE SET
-                       label = excluded.label,
-                       amount = excluded.amount,
-                       metadata = excluded.metadata,
-                       updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')",
-                )
-                .bind(stream_id)
-                .bind(&label)
-                .bind(date.to_string())
-                .bind(loan.regular_payment - avg_service_fee)
-                .bind(&source_id)
-                .bind(serde_json::json!({ "loan_account": loan.loan_account }).to_string())
-                .execute(pool)
-                .await?;
-
-                if result.rows_affected() > 0 {
-                    count += 1;
-                }
-            }
-
-            // Advance one month using chrono
-            date = date
-                .checked_add_months(chrono::Months::new(1))
-                .unwrap_or(date + chrono::Duration::days(30));
-        }
-    }
-
-    Ok(count)
 }

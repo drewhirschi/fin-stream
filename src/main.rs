@@ -1,7 +1,7 @@
 use axum::Router;
-use tower_http::services::ServeDir;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use tower_http::services::ServeDir;
 
 use trust_deeds::{AppState, config, db, routes};
 
@@ -18,9 +18,8 @@ async fn main() -> anyhow::Result<()> {
 
     let pool = db::init().await?;
 
-    // Ensure default streams exist on startup
-    db::ensure_trustee_stream(&pool).await?;
-    db::ensure_expenses_stream(&pool).await?;
+    // Ensure default accounts, streams, views, and recurring schedules exist on startup.
+    db::streams::ensure_default_configuration(&pool).await?;
 
     let state = Arc::new(AppState {
         db: pool,
@@ -29,10 +28,12 @@ async fn main() -> anyhow::Result<()> {
 
     let app = Router::new()
         .merge(routes::health::router())
+        .merge(routes::media::router())
         .merge(routes::pages::router())
         .merge(routes::sync::router())
         .merge(routes::api::router())
         .nest_service("/static", ServeDir::new("static"))
+        .fallback(routes::pages::not_found)
         .with_state(state.clone());
 
     #[cfg(debug_assertions)]

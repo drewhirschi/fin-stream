@@ -1,0 +1,127 @@
+{% extends "integration_base.html" %}
+
+{% block integration_page_content %}
+<div class="flex flex-col gap-6">
+    <div class="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_20rem] gap-6">
+        <div class="card bg-base-100 shadow-sm border border-base-300">
+            <div class="card-body">
+                <h2 class="card-title">Mortgage Office Workspace</h2>
+                <p class="label-dim text-sm">
+                    This is the app wrapper around {{ connection.name }}. Use Loans and Payments to work from Trust Deeds, then drop into Sync or Debug only when you need operational detail.
+                </p>
+                <div class="flex flex-wrap gap-3 mt-2">
+                    {% if connection.slug == "tmo" %}
+                    <a href="/integrations/{{ connection.slug }}/loans" class="btn btn-primary btn-sm">Open loans</a>
+                    <a href="/integrations/{{ connection.slug }}/payments" class="btn btn-outline btn-sm">Open payments</a>
+                    {% endif %}
+                    <a href="/integrations/{{ connection.slug }}/sync" class="btn btn-ghost btn-sm">Sync settings</a>
+                </div>
+            </div>
+        </div>
+
+        <div class="card bg-base-100 shadow-sm border border-base-300">
+            <div class="card-body">
+                <h2 class="card-title text-lg">At a glance</h2>
+                <div class="stats stats-vertical shadow-none bg-transparent p-0">
+                    <div class="stat px-0 py-2">
+                        <div class="stat-title">Loans</div>
+                        <div class="stat-value text-2xl">{{ loans.len()|number }}</div>
+                    </div>
+                    <div class="stat px-0 py-2">
+                        <div class="stat-title">Recent payments</div>
+                        <div class="stat-value text-2xl">{{ payments.len()|number }}</div>
+                    </div>
+                    <div class="stat px-0 py-2">
+                        <div class="stat-title">Pending imports</div>
+                        <div class="stat-value text-2xl">{{ connection.pending_count|number }}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% if connection.slug == "tmo" %}
+    <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
+        <div class="card bg-base-100 shadow-sm border border-base-300">
+            <div class="card-body">
+                <div class="flex items-center justify-between gap-4">
+                    <div>
+                        <h2 class="card-title">Loans</h2>
+                        <p class="label-dim text-sm">Active loans imported from TMO.</p>
+                    </div>
+                    <a href="/integrations/{{ connection.slug }}/loans" class="link link-primary text-sm">See all</a>
+                </div>
+                {% if loans.is_empty() %}
+                <div class="alert alert-info mt-2">No loan data yet. Run a sync to populate this workspace.</div>
+                {% else %}
+                <div class="overflow-x-auto mt-2">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>Loan</th>
+                                <th>Borrower</th>
+                                <th>Next payment</th>
+                                <th>Balance</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for loan in loans %}
+                            {% if loop.index <= 6 %}
+                            <tr>
+                                <td class="font-mono text-xs">{{ loan.loan_account }}</td>
+                                <td>{{ loan.borrower_name.as_deref().unwrap_or("Unknown") }}</td>
+                                <td>{{ loan.next_payment_date.as_deref().unwrap_or("—")|date }}</td>
+                                <td>{% match loan.principal_balance %}{% when Some with (b) %}${{ b|money }}{% when None %}—{% endmatch %}</td>
+                            </tr>
+                            {% endif %}
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="card bg-base-100 shadow-sm border border-base-300">
+            <div class="card-body">
+                <div class="flex items-center justify-between gap-4">
+                    <div>
+                        <h2 class="card-title">Payments</h2>
+                        <p class="label-dim text-sm">Recent app-native payment events sourced from this integration.</p>
+                    </div>
+                    <a href="/integrations/{{ connection.slug }}/payments" class="link link-primary text-sm">See all</a>
+                </div>
+                {% if payments.is_empty() %}
+                <div class="alert alert-info mt-2">No payment activity yet. Run a sync to populate this workspace.</div>
+                {% else %}
+                <div class="overflow-x-auto mt-2">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Loan</th>
+                                <th>Source</th>
+                                <th>Amount</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for p in payments %}
+                            <tr>
+                                <td>{{ p.actual_date.as_deref().or(p.expected_date.as_deref()).unwrap_or(&p.scheduled_date)|date }}</td>
+                                <td class="font-mono text-xs">{{ p.loan_account.as_deref().unwrap_or("—") }}</td>
+                                <td>{{ p.label.as_deref().unwrap_or("-") }}</td>
+                                <td>${{ p.amount|money }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <div class="alert alert-info">This integration does not have a custom workspace yet.</div>
+    {% endif %}
+</div>
+{% endblock %}

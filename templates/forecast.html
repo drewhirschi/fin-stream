@@ -1,202 +1,267 @@
 {% extends "base.html" %}
 
-{% block nav_forecast %}active{% endblock %}
+{% block nav_forecast %}active menu-active{% endblock %}
+{% block nav_forecast_attrs %}aria-current="page"{% endblock %}
 
 {% block content %}
-<div class="vault" x-data="forecastApp()" x-init="init()">
-
+<div class="vault" x-data="timelineApp()" x-init="init()">
     {% if !has_balance %}
-    <!-- No starting balance prompt -->
     <div class="surface-high p-6 mb-8">
         <h2 class="text-lg mb-2" style="font-family: var(--font-display)">Set your starting cash balance</h2>
-        <p class="label-dim mb-4">The forecast needs a starting point. Enter your current available cash.</p>
-        <div class="flex gap-3 items-center">
+        <p class="label-dim mb-4">The timeline needs a current cash balance before it can explain anything.</p>
+        <div class="flex flex-wrap gap-3 items-center">
             <input type="number" step="0.01" placeholder="e.g. 5000.00"
                    class="px-3 py-2 rounded-lg mono"
-                   style="background: var(--vault-surface-container-lowest); color: var(--vault-on-surface); border: none; outline: none; width: 12rem;"
-                   x-model="cashInput"
-                   @focus="$el.style.background = 'var(--vault-surface-container-highest)'; $el.style.borderBottom = '1px solid var(--vault-primary)'"
-                   @blur="$el.style.background = 'var(--vault-surface-container-lowest)'; $el.style.borderBottom = 'none'">
+                   style="background: var(--vault-surface-container-lowest); color: var(--vault-on-surface); border: none; outline: none; width: 14rem;"
+                   x-model="cashInput">
             <button class="emerald-pulse px-4 py-2 rounded-lg font-semibold text-sm cursor-pointer"
                     @click="setCashBalance()">
-                Save
+                Save Cash Balance
             </button>
         </div>
     </div>
     {% endif %}
 
-    <!-- Hero: Cash position at scrubbed date -->
-    <div class="text-center mb-10 pt-4">
-        <div class="label-dim mb-1">Cash position on</div>
-        <div class="mono text-lg" style="color: var(--vault-on-surface)" x-text="scrubberDateFormatted"></div>
-        <div class="hero-number mt-1"
-             :class="heroBalance >= 0 ? 'hero-positive' : 'hero-negative'"
-             x-text="'$' + Math.abs(heroBalance).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})">
-            $0.00
-        </div>
-        <div class="label-dim mt-2" x-show="forecast">
-            <span x-text="forecast?.rows?.length || 0"></span> events in range
-        </div>
-    </div>
-
-    <!-- Scrubber -->
-    <div class="px-4 mb-8">
-        <input type="range"
-               :min="scrubberMin" :max="scrubberMax"
-               x-model.number="scrubberValue"
-               @input="updateHero()"
-               @keydown.left.prevent="scrubberValue = Math.max(scrubberMin, scrubberValue - 1); updateHero()"
-               @keydown.right.prevent="scrubberValue = Math.min(scrubberMax, scrubberValue + 1); updateHero()"
-               @keydown.shift.left.prevent="scrubberValue = Math.max(scrubberMin, scrubberValue - 7); updateHero()"
-               @keydown.shift.right.prevent="scrubberValue = Math.min(scrubberMax, scrubberValue + 7); updateHero()"
-               @keydown.home.prevent="scrubberValue = todayValue; updateHero()">
-        <div class="flex justify-between label-dim mt-2">
-            <span x-text="scrubberMinLabel"></span>
-            <span style="color: var(--vault-primary)">Today</span>
-            <span x-text="scrubberMaxLabel"></span>
-        </div>
-    </div>
-
-    <!-- Add Expense button -->
-    <div class="flex justify-end mb-4 px-4">
-        <button class="emerald-pulse px-4 py-2 rounded-lg font-semibold text-sm cursor-pointer"
-                @click="showAddExpense = true">
-            + Add Expense
-        </button>
-    </div>
-
-    <!-- Add Expense Modal (glassmorphism) -->
-    <template x-if="showAddExpense">
-        <div class="fixed inset-0 z-50 flex items-center justify-center" style="background: rgba(0,0,0,0.5);"
-             @click.self="showAddExpense = false" @keydown.escape.window="showAddExpense = false">
-            <div class="glass shadow-ambient p-6" style="width: 24rem;">
-                <h3 style="font-family: var(--font-display); font-size: 1.125rem; font-weight: 700; margin-bottom: 1rem;">Add Expense</h3>
-                <div class="mb-3">
-                    <label class="label-dim block mb-1">Label</label>
-                    <input type="text" x-model="newExpense.label" placeholder="e.g. Car Insurance"
-                           class="w-full px-3 py-2 rounded-lg" style="background: var(--vault-surface-container-lowest); color: var(--vault-on-surface); border: none; outline: none;">
+    <div class="flex flex-col gap-8">
+        <section class="grid gap-4 xl:grid-cols-[1.8fr,1fr]">
+            <div class="surface-low p-6">
+                <div class="label-dim mb-1">Cash position on</div>
+                <div class="mono text-lg" style="color: var(--vault-on-surface)" x-text="activeDateFormatted"></div>
+                <div class="hero-number mt-2"
+                     :class="activeBalance >= 0 ? 'hero-positive' : 'hero-negative'"
+                     x-text="currency(activeBalance)">
                 </div>
-                <div class="mb-3">
-                    <label class="label-dim block mb-1">Amount ($)</label>
-                    <input type="number" step="0.01" x-model="newExpense.amount" placeholder="1200.00"
-                           class="w-full px-3 py-2 rounded-lg mono" style="background: var(--vault-surface-container-lowest); color: var(--vault-on-surface); border: none; outline: none;">
+                <div class="grid gap-3 md:grid-cols-3 mt-5">
+                    <div class="surface-high p-4">
+                        <div class="label-dim mb-1">Opening</div>
+                        <div class="mono text-base" x-text="currency(activeBreakdown.opening)"></div>
+                    </div>
+                    <div class="surface-high p-4">
+                        <div class="label-dim mb-1">Inflows</div>
+                        <div class="mono text-base" style="color: var(--vault-primary)" x-text="currency(activeBreakdown.inflows)"></div>
+                    </div>
+                    <div class="surface-high p-4">
+                        <div class="label-dim mb-1">Outflows</div>
+                        <div class="mono text-base" style="color: var(--vault-secondary)" x-text="currency(activeBreakdown.outflows)"></div>
+                    </div>
                 </div>
-                <div class="mb-4">
-                    <label class="label-dim block mb-1">Date</label>
-                    <input type="date" x-model="newExpense.date"
-                           class="w-full px-3 py-2 rounded-lg mono" style="background: var(--vault-surface-container-lowest); color: var(--vault-on-surface); border: none; outline: none; color-scheme: dark;">
+            </div>
+
+            <div class="surface-low p-6 flex flex-col gap-4">
+                <div>
+                    <div class="label-dim mb-1">Current cash source</div>
+                    <div class="text-lg" x-text="forecast?.cash_source?.account_name || 'Current cash'"></div>
+                    <div class="mono mt-2" x-text="currency(forecast?.cash_source?.amount || forecast?.starting_balance || 0)"></div>
                 </div>
-                <div class="flex gap-2 justify-end">
-                    <button class="px-4 py-2 rounded-lg text-sm cursor-pointer"
-                            style="color: var(--vault-on-surface-variant)"
-                            @click="showAddExpense = false">Cancel</button>
+                <div class="label-dim" x-text="forecast?.cash_source?.detail || 'Using your saved current cash balance.'"></div>
+                <div class="label-dim" x-show="forecast?.cash_source?.updated_at" x-text="'Updated ' + (forecast?.cash_source?.updated_at || '')"></div>
+                <div class="flex flex-wrap gap-2">
                     <button class="emerald-pulse px-4 py-2 rounded-lg font-semibold text-sm cursor-pointer"
-                            :disabled="expenseSaving"
-                            @click="saveExpense()">
-                        <span x-show="!expenseSaving">Save</span>
-                        <span x-show="expenseSaving">Saving...</span>
+                            @click="syncMonarchBalance()">
+                        Sync Monarch
+                    </button>
+                    <button class="px-4 py-2 rounded-lg text-sm cursor-pointer"
+                            style="background: var(--vault-surface-container-high); color: var(--vault-on-surface)"
+                            @click="selectedDay = activeDay; openComposer()">
+                        Add Event On This Day
                     </button>
                 </div>
-                <div x-show="expenseError" class="mt-3 text-sm" style="color: var(--vault-secondary)" x-text="expenseError"></div>
             </div>
-        </div>
-    </template>
+        </section>
 
-    <!-- Override Popover (glassmorphism) -->
-    <template x-if="selectedEvent">
-        <div class="fixed inset-0 z-50 flex items-center justify-center" style="background: rgba(0,0,0,0.5);"
-             @click.self="selectedEvent = null" @keydown.escape.window="selectedEvent = null">
-            <div class="glass shadow-ambient p-6" style="width: 22rem;">
-                <h3 style="font-family: var(--font-display); font-size: 1.125rem; font-weight: 700; margin-bottom: 0.5rem;">Override Payment Date</h3>
-                <p class="label-dim mb-3" x-text="selectedEvent.label"></p>
-                <div class="flex items-center gap-3 mb-2">
-                    <span class="label-dim">Scheduled:</span>
-                    <span class="mono" x-text="selectedEvent.date"></span>
+        <section class="surface-low p-5">
+            <div class="flex flex-wrap items-end justify-between gap-4 mb-4">
+                <div>
+                    <h2 class="text-2xl">Timeline</h2>
+                    <p class="label-dim mt-1">Scroll to zoom. Hover to inspect. Click a day to configure what happens there.</p>
                 </div>
-                <div class="flex items-center gap-3 mb-2">
-                    <span class="mono" :class="selectedEvent.amount >= 0 ? 'chip-positive' : 'chip-negative'"
-                          x-text="(selectedEvent.amount >= 0 ? '+' : '') + '$' + Math.abs(selectedEvent.amount).toFixed(2)"></span>
+                <div class="flex flex-wrap gap-3 items-end">
+                    <label class="flex flex-col gap-1">
+                        <span class="label-dim">View</span>
+                        <select class="select select-sm bg-base-100"
+                                x-model="selectedViewId"
+                                @change="fetchForecast()">
+                            {% for view in views %}
+                            <option value="{{ view.id }}" {% if selected_view_id == view.id %}selected{% endif %}>
+                                {{ view.name }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </label>
+                    <div class="label-dim pb-2" x-text="zoomLabel"></div>
                 </div>
-                <template x-if="selectedEvent.status !== 'received'">
-                    <div class="mt-4">
-                        <label class="label-dim block mb-1">New expected date</label>
-                        <input type="date" x-model="overrideDate"
-                               class="w-full px-3 py-2 rounded-lg mono" style="background: var(--vault-surface-container-lowest); color: var(--vault-on-surface); border: none; outline: none; color-scheme: dark;">
-                        <div class="flex gap-2 justify-end mt-4">
-                            <button class="px-4 py-2 rounded-lg text-sm cursor-pointer"
-                                    style="color: var(--vault-on-surface-variant)"
-                                    @click="selectedEvent = null">Cancel</button>
-                            <button class="emerald-pulse px-4 py-2 rounded-lg font-semibold text-sm cursor-pointer"
-                                    :disabled="overrideSaving"
-                                    @click="saveOverride()">
-                                <span x-show="!overrideSaving">Save Override</span>
-                                <span x-show="overrideSaving">Saving...</span>
-                            </button>
-                        </div>
-                        <div x-show="overrideError" class="mt-3 text-sm" style="color: var(--vault-secondary)" x-text="overrideError"></div>
+            </div>
+
+            <div class="surface-high p-3 rounded-xl"
+                 x-ref="chartWrap"
+                 @mousemove="handlePointer($event)"
+                 @mouseleave="hoverDay = null"
+                 @click="focusPointerDay($event)"
+                 @wheel.prevent="zoom($event)">
+                <svg class="w-full" :viewBox="`0 0 ${chartWidth} ${chartHeight}`" preserveAspectRatio="none" style="height: 320px;">
+                    <template x-for="tick in visibleTicks" :key="tick.date">
+                        <g>
+                            <line :x1="tick.x" :x2="tick.x" y1="20" :y2="chartHeight - 32"
+                                  :stroke="tick.isMonth ? 'rgba(134,148,138,0.28)' : 'rgba(134,148,138,0.10)'"
+                                  :stroke-width="tick.isMonth ? 1.2 : 1"></line>
+                            <text :x="tick.x + 4" y="18" class="mono" :fill="tick.isMonth ? '#e1e2e7' : '#86948a'" font-size="10"
+                                  x-text="tick.label"></text>
+                        </g>
+                    </template>
+
+                    <polyline fill="none" stroke="rgba(78,222,163,0.18)" stroke-width="14" stroke-linecap="round"
+                              :points="linePoints"></polyline>
+                    <polyline fill="none" stroke="var(--vault-primary)" stroke-width="3.5" stroke-linecap="round"
+                              stroke-linejoin="round" :points="linePoints"></polyline>
+
+                    <template x-for="event in visibleEvents" :key="event.event_id">
+                        <g @click.stop="editEvent(event)">
+                            <line :x1="event.x" :x2="event.x" :y1="event.y - markerStem(event)" :y2="event.y"
+                                  :stroke="event.amount >= 0 ? '#4edea3' : '#ef4444'" stroke-width="2"></line>
+                            <circle :cx="event.x" :cy="event.y - markerStem(event)" r="5.5"
+                                    :fill="event.amount >= 0 ? '#4edea3' : '#ef4444'"
+                                    :stroke="event.is_delinquent === 1 ? '#f59e0b' : 'transparent'"
+                                    :stroke-width="event.is_delinquent === 1 ? 3 : 0"></circle>
+                        </g>
+                    </template>
+
+                    <g x-show="hoverDay !== null">
+                        <line :x1="hoverX" :x2="hoverX" y1="20" :y2="chartHeight - 32"
+                              stroke="rgba(225,226,231,0.55)" stroke-width="1.5" stroke-dasharray="5 6"></line>
+                        <circle :cx="hoverX" :cy="hoverY" r="6" fill="#111417" stroke="#e1e2e7" stroke-width="2"></circle>
+                    </g>
+                </svg>
+            </div>
+        </section>
+
+        <section class="grid gap-4 xl:grid-cols-[1.3fr,1fr]">
+            <div class="surface-low p-5">
+                <div class="flex items-center justify-between gap-3 mb-4">
+                    <div>
+                        <h2 class="text-xl">Day Inspector</h2>
+                        <p class="label-dim mt-1" x-text="selectedDayFormatted"></p>
+                    </div>
+                    <button class="px-4 py-2 rounded-lg text-sm cursor-pointer"
+                            style="background: var(--vault-surface-container-high); color: var(--vault-on-surface)"
+                            @click="openComposer()">
+                        Add Event
+                    </button>
+                </div>
+
+                <div class="grid gap-3 md:grid-cols-3 mb-5">
+                    <div class="surface-high p-4">
+                        <div class="label-dim mb-1">Opening</div>
+                        <div class="mono" x-text="currency(selectedBreakdown.opening)"></div>
+                    </div>
+                    <div class="surface-high p-4">
+                        <div class="label-dim mb-1">Net change</div>
+                        <div class="mono" :style="selectedBreakdown.net >= 0 ? 'color: var(--vault-primary)' : 'color: var(--vault-secondary)'"
+                             x-text="currency(selectedBreakdown.net)"></div>
+                    </div>
+                    <div class="surface-high p-4">
+                        <div class="label-dim mb-1">Closing</div>
+                        <div class="mono" x-text="currency(selectedBreakdown.closing)"></div>
+                    </div>
+                </div>
+
+                <template x-if="selectedDayEvents.length === 0">
+                    <div class="surface-high p-5 text-center">
+                        <div class="label-dim">No events on this day yet.</div>
                     </div>
                 </template>
-                <template x-if="selectedEvent.status === 'received'">
-                    <div class="mt-3">
-                        <p class="label-dim">This payment has been received and cannot be overridden.</p>
-                        <button class="px-4 py-2 rounded-lg text-sm cursor-pointer mt-3"
-                                style="color: var(--vault-on-surface-variant)"
-                                @click="selectedEvent = null">Close</button>
-                    </div>
-                </template>
+
+                <div class="flex flex-col gap-3" x-show="selectedDayEvents.length > 0">
+                    <template x-for="event in selectedDayEvents" :key="event.event_id">
+                        <button class="surface-high p-4 text-left cursor-pointer"
+                                @click="editEvent(event)">
+                            <div class="flex items-start justify-between gap-3">
+                                <div>
+                                    <div class="font-semibold" x-text="event.label || event.stream_name || 'Untitled event'"></div>
+                                    <div class="label-dim mt-1">
+                                        <span x-text="event.stream_name || 'Stream'"></span>
+                                        <span x-show="event.account_name"> • <span x-text="event.account_name"></span></span>
+                                        <span> • </span>
+                                        <span x-text="event.status"></span>
+                                    </div>
+                                </div>
+                                <div class="mono" :style="event.amount >= 0 ? 'color: var(--vault-primary)' : 'color: var(--vault-secondary)'"
+                                     x-text="currency(event.amount)"></div>
+                            </div>
+                        </button>
+                    </template>
+                </div>
             </div>
-        </div>
-    </template>
 
-    <!-- Stream lanes (timeline) -->
-    <template x-if="forecast && forecast.rows.length > 0">
-        <div class="mb-8">
-            <template x-for="(lane, idx) in streamLanes" :key="lane.name">
-                <div class="mb-5">
-                    <div class="flex items-center gap-2 mb-2">
-                        <span class="stream-lane-label" x-text="lane.name"></span>
-                        <span class="label-dim" x-text="lane.events.length + ' events'"></span>
-                    </div>
-                    <div class="stream-lane timeline-container" style="overflow-x: auto;"
-                         :style="'width: ' + timelineWidth + 'px; min-width: 100%'">
-                        <!-- Month markers -->
-                        <template x-for="month in monthMarkers" :key="month.label">
-                            <div class="month-marker absolute top-0 bottom-0"
-                                 :style="'left: ' + month.x + 'px'">
-                                <span class="month-label absolute" style="top: -1.25rem" x-text="month.label"></span>
-                            </div>
-                        </template>
-
-                        <!-- Event dots -->
-                        <template x-for="event in lane.events" :key="event.event_id">
-                            <div class="dot"
-                                 :class="{
-                                     'dot-inflow': event.amount > 0,
-                                     'dot-outflow': event.amount < 0,
-                                     'dot-delinquent': event.is_delinquent === 1
-                                 }"
-                                 :style="'left: ' + getEventX(event.date) + 'px'"
-                                 :title="event.label + ': $' + Math.abs(event.amount).toFixed(2) + ' on ' + event.date"
-                                 @click="selectEvent(event)">
-                            </div>
-                        </template>
-
-                        <!-- Scrubber line -->
-                        <div class="scrubber-line" :style="'left: ' + scrubberX + 'px'"></div>
+            <div class="surface-low p-5">
+                <div class="flex items-center justify-between gap-3 mb-4">
+                    <div>
+                        <h2 class="text-xl" x-text="editingEvent ? 'Edit Event' : 'Add Event'"></h2>
+                        <p class="label-dim mt-1" x-text="editingEvent ? 'Projected and scheduled events can be updated here.' : 'Create a one-off event on the selected day.'"></p>
                     </div>
                 </div>
-            </template>
-        </div>
-    </template>
 
-    <!-- Events table -->
-    <template x-if="forecast && forecast.rows.length > 0">
-        <div class="surface-low p-4 overflow-x-auto">
+                <div class="flex flex-col gap-3">
+                    <label class="flex flex-col gap-1">
+                        <span class="label-dim">Label</span>
+                        <input class="input input-sm bg-base-100" type="text" x-model="composer.label" placeholder="Car insurance">
+                    </label>
+
+                    <div class="grid gap-3 md:grid-cols-2">
+                        <label class="flex flex-col gap-1">
+                            <span class="label-dim">Stream</span>
+                            <select class="select select-sm bg-base-100" x-model="composer.stream_id">
+                                {% for stream in streams %}
+                                <option value="{{ stream.id }}">{{ stream.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </label>
+                        <label class="flex flex-col gap-1">
+                            <span class="label-dim">Account</span>
+                            <select class="select select-sm bg-base-100" x-model="composer.account_id">
+                                <option value="">Use stream default</option>
+                                {% for account in accounts %}
+                                <option value="{{ account.id }}">{{ account.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </label>
+                    </div>
+
+                    <div class="grid gap-3 md:grid-cols-2">
+                        <label class="flex flex-col gap-1">
+                            <span class="label-dim">Amount</span>
+                            <input class="input input-sm bg-base-100 mono" type="number" step="0.01" x-model="composer.amount" placeholder="-125.00">
+                        </label>
+                        <label class="flex flex-col gap-1">
+                            <span class="label-dim" x-text="editingEvent ? 'Expected date' : 'Scheduled date'"></span>
+                            <input class="input input-sm bg-base-100 mono" type="date" x-model="composer.date">
+                        </label>
+                    </div>
+
+                    <div class="flex gap-2 pt-2">
+                        <button class="emerald-pulse px-4 py-2 rounded-lg font-semibold text-sm cursor-pointer"
+                                @click="saveComposer()"
+                                :disabled="composerSaving">
+                            <span x-show="!composerSaving" x-text="editingEvent ? 'Save Event' : 'Create Event'"></span>
+                            <span x-show="composerSaving">Saving...</span>
+                        </button>
+                        <button class="px-4 py-2 rounded-lg text-sm cursor-pointer"
+                                style="background: var(--vault-surface-container-high); color: var(--vault-on-surface)"
+                                @click="resetComposer()">
+                            Reset
+                        </button>
+                    </div>
+                    <div class="label-dim" style="color: var(--vault-secondary)" x-show="composerError" x-text="composerError"></div>
+                </div>
+            </div>
+        </section>
+
+        <section class="surface-low p-4 overflow-x-auto" x-show="forecast && forecast.rows.length > 0">
             <table>
                 <thead>
                     <tr>
                         <th>Date</th>
-                        <th>Source</th>
+                        <th>Label</th>
+                        <th>Stream</th>
                         <th>Amount</th>
                         <th>Balance</th>
                         <th>Status</th>
@@ -204,266 +269,381 @@
                 </thead>
                 <tbody>
                     <template x-for="row in forecast.rows" :key="row.event_id">
-                        <tr :style="row.date > scrubberDateISO ? 'opacity: 0.35' : ''">
+                        <tr @click="editEvent(row)" class="cursor-pointer">
                             <td class="mono" x-text="row.date"></td>
-                            <td>
-                                <span x-text="row.label || '-'"></span>
-                                <template x-if="row.is_delinquent === 1">
-                                    <span class="chip-negative ml-2" style="font-size: 0.7rem; padding: 0 0.4rem;">Late</span>
-                                </template>
-                            </td>
-                            <td class="mono">
-                                <span :class="row.amount >= 0 ? 'chip-positive' : 'chip-negative'"
-                                      x-text="(row.amount >= 0 ? '+' : '') + '$' + Math.abs(row.amount).toFixed(2)"></span>
-                            </td>
-                            <td class="mono" :style="row.running_balance < 0 ? 'color: var(--vault-secondary)' : ''"
-                                x-text="'$' + row.running_balance.toLocaleString('en-US', {minimumFractionDigits: 2})"></td>
-                            <td>
-                                <span class="label-dim" x-text="row.status"></span>
-                            </td>
+                            <td x-text="row.label || 'Untitled event'"></td>
+                            <td x-text="row.stream_name || '-'"></td>
+                            <td class="mono" :style="row.amount >= 0 ? 'color: var(--vault-primary)' : 'color: var(--vault-secondary)'"
+                                x-text="currency(row.amount)"></td>
+                            <td class="mono" x-text="currency(row.running_balance)"></td>
+                            <td class="label-dim" x-text="row.status"></td>
                         </tr>
                     </template>
                 </tbody>
             </table>
-        </div>
-    </template>
+        </section>
 
-    <!-- Empty state -->
-    <template x-if="forecast && forecast.rows.length === 0">
-        <div class="surface-high p-8 text-center">
-            <p style="color: var(--vault-on-surface-variant)">No events in the selected date range.</p>
-            <a href="/sync" class="inline-block mt-3 emerald-pulse px-4 py-2 rounded-lg font-semibold text-sm" style="text-decoration: none;">Run a Sync</a>
-        </div>
-    </template>
+        <template x-if="loading">
+            <div class="flex justify-center py-16">
+                <div class="w-8 h-8 rounded-full" style="border: 3px solid var(--vault-surface-container-highest); border-top-color: var(--vault-primary); animation: spin 0.8s linear infinite;"></div>
+            </div>
+        </template>
 
-    <!-- Loading state -->
-    <template x-if="loading">
-        <div class="flex justify-center py-16">
-            <div class="w-8 h-8 rounded-full" style="border: 3px solid var(--vault-surface-container-highest); border-top-color: var(--vault-primary); animation: spin 0.8s linear infinite;"></div>
-        </div>
-    </template>
-    <style>@keyframes spin { to { transform: rotate(360deg); } }</style>
-
-    <!-- Error state -->
-    <template x-if="error">
-        <div class="surface-high p-4" style="border-left: 3px solid var(--vault-secondary);">
-            <span style="color: var(--vault-secondary)" x-text="error"></span>
-        </div>
-    </template>
+        <template x-if="error">
+            <div class="surface-high p-4" style="border-left: 3px solid var(--vault-secondary);">
+                <span style="color: var(--vault-secondary)" x-text="error"></span>
+            </div>
+        </template>
+    </div>
 </div>
 
 <script>
-function forecastApp() {
-    const PIXELS_PER_DAY = 8;
-    const PAST_DAYS = 90;
-    const FUTURE_DAYS = 180;
-
-    function dateToEpochDays(dateStr) {
-        const d = new Date(dateStr + 'T00:00:00');
-        return Math.floor(d.getTime() / 86400000);
-    }
-
-    function epochDaysToDate(days) {
-        return new Date(days * 86400000).toISOString().split('T')[0];
-    }
-
-    function epochDaysToFormatted(days) {
-        const d = new Date(days * 86400000);
-        return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
-    }
-
+function timelineApp() {
+    const DAY_MS = 86400000;
+    const chartHeight = 320;
     const today = new Date().toISOString().split('T')[0];
-    const todayDays = dateToEpochDays(today);
+
+    function dateToDay(dateStr) {
+        const date = new Date(dateStr + 'T00:00:00Z');
+        return Math.floor(date.getTime() / DAY_MS);
+    }
+
+    function dayToDate(day) {
+        return new Date(day * DAY_MS).toISOString().split('T')[0];
+    }
 
     return {
         forecast: null,
         loading: false,
         error: null,
         cashInput: '',
+        chartWidth: 1000,
+        chartHeight,
+        visibleStart: dateToDay(today) - 30,
+        visibleSpan: 120,
+        minSpan: 14,
+        maxSpan: 365,
+        hoverDay: null,
+        selectedDay: dateToDay(today),
+        selectedViewId: '{{ selected_view_id }}',
+        composer: { label: '', stream_id: '{{ default_stream_id }}', account_id: '', amount: '', date: today },
+        editingEvent: null,
+        composerSaving: false,
+        composerError: null,
 
-        // Modal state
-        showAddExpense: false,
-        newExpense: { label: '', amount: '', date: today },
-        expenseSaving: false,
-        expenseError: null,
+        get activeDay() {
+            return this.hoverDay ?? this.selectedDay ?? dateToDay(today);
+        },
+        get activeDateFormatted() {
+            return new Date(dayToDate(this.activeDay) + 'T00:00:00Z').toLocaleDateString('en-US', {
+                month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC'
+            });
+        },
+        get activeBalance() {
+            return this.balanceForDay(this.activeDay);
+        },
+        get selectedDayFormatted() {
+            return new Date(dayToDate(this.selectedDay) + 'T00:00:00Z').toLocaleDateString('en-US', {
+                month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC'
+            });
+        },
+        get activeBreakdown() {
+            return this.breakdownForDay(this.activeDay);
+        },
+        get selectedBreakdown() {
+            return this.breakdownForDay(this.selectedDay);
+        },
+        get selectedDayEvents() {
+            return (this.forecast?.rows || []).filter((row) => dateToDay(row.date) === this.selectedDay);
+        },
+        get visibleEnd() {
+            return this.visibleStart + this.visibleSpan;
+        },
+        get zoomLabel() {
+            return `${this.visibleSpan} day window`;
+        },
+        get dailySeries() {
+            if (!this.forecast) return [];
+            const rows = this.forecast.rows;
+            const visibleRows = [];
+            let index = 0;
+            let running = this.forecast.starting_balance;
+            const firstDay = this.visibleStart;
+            const lastDay = this.visibleEnd;
 
-        // Override state
-        selectedEvent: null,
-        overrideDate: '',
-        overrideSaving: false,
-        overrideError: null,
+            while (index < rows.length && dateToDay(rows[index].date) < firstDay) {
+                running = rows[index].running_balance;
+                index += 1;
+            }
 
-        scrubberMin: todayDays - PAST_DAYS,
-        scrubberMax: todayDays + FUTURE_DAYS,
-        scrubberValue: todayDays,
-        todayValue: todayDays,
+            for (let day = firstDay; day <= lastDay; day += 1) {
+                while (index < rows.length && dateToDay(rows[index].date) === day) {
+                    running = rows[index].running_balance;
+                    index += 1;
+                }
+                visibleRows.push({ day, balance: running });
+            }
 
-        get scrubberDateISO() { return epochDaysToDate(this.scrubberValue); },
-        get scrubberDateFormatted() { return epochDaysToFormatted(this.scrubberValue); },
-        get scrubberMinLabel() { return epochDaysToFormatted(this.scrubberMin); },
-        get scrubberMaxLabel() { return epochDaysToFormatted(this.scrubberMax); },
+            return visibleRows;
+        },
+        get visibleTicks() {
+            const ticks = [];
+            const step = this.visibleSpan <= 45 ? 1 : this.visibleSpan <= 120 ? 7 : 14;
+            for (let day = this.visibleStart; day <= this.visibleEnd; day += step) {
+                const date = new Date(dayToDate(day) + 'T00:00:00Z');
+                const isMonth = date.getUTCDate() === 1;
+                ticks.push({
+                    date: day,
+                    x: this.xForDay(day),
+                    isMonth,
+                    label: isMonth
+                        ? date.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' })
+                        : (this.visibleSpan <= 45 ? date.getUTCDate() : date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }))
+                });
+            }
+            return ticks;
+        },
+        get linePoints() {
+            if (this.dailySeries.length === 0) return '';
+            return this.dailySeries
+                .map((point) => `${this.xForDay(point.day)},${this.yForBalance(point.balance)}`)
+                .join(' ');
+        },
+        get visibleEvents() {
+            return (this.forecast?.rows || [])
+                .filter((row) => {
+                    const day = dateToDay(row.date);
+                    return day >= this.visibleStart && day <= this.visibleEnd;
+                })
+                .map((row) => ({
+                    ...row,
+                    x: this.xForDay(dateToDay(row.date)),
+                    y: this.yForBalance(row.running_balance),
+                }));
+        },
+        get hoverX() {
+            return this.hoverDay === null ? 0 : this.xForDay(this.hoverDay);
+        },
+        get hoverY() {
+            return this.yForBalance(this.balanceForDay(this.hoverDay ?? this.selectedDay));
+        },
 
-        get heroBalance() {
+        currency(value) {
+            const numeric = Number(value || 0);
+            const prefix = numeric < 0 ? '-' : '';
+            return `${prefix}$${Math.abs(numeric).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        },
+        xForDay(day) {
+            return ((day - this.visibleStart) / this.visibleSpan) * this.chartWidth;
+        },
+        yForBalance(balance) {
+            if (this.dailySeries.length === 0) return this.chartHeight / 2;
+            const balances = this.dailySeries.map((point) => point.balance);
+            let min = Math.min(...balances);
+            let max = Math.max(...balances);
+            if (min === max) {
+                min -= 100;
+                max += 100;
+            }
+            const padding = Math.max((max - min) * 0.12, 50);
+            min -= padding;
+            max += padding;
+            const usableHeight = this.chartHeight - 72;
+            return 24 + ((max - balance) / (max - min)) * usableHeight;
+        },
+        markerStem(event) {
+            return event.amount >= 0 ? 18 : 26;
+        },
+        balanceForDay(day) {
             if (!this.forecast) return 0;
-            const targetDate = this.scrubberDateISO;
             let balance = this.forecast.starting_balance;
             for (const row of this.forecast.rows) {
-                if (row.date > targetDate) break;
+                if (dateToDay(row.date) > day) break;
                 balance = row.running_balance;
             }
             return balance;
         },
-
-        get timelineWidth() { return (PAST_DAYS + FUTURE_DAYS) * PIXELS_PER_DAY; },
-        get scrubberX() { return (this.scrubberValue - this.scrubberMin) * PIXELS_PER_DAY; },
-
-        get streamLanes() {
-            if (!this.forecast) return [];
-            const lanes = {};
+        breakdownForDay(day) {
+            if (!this.forecast) {
+                return { opening: 0, inflows: 0, outflows: 0, net: 0, closing: 0 };
+            }
+            const opening = this.balanceForDay(day - 1);
+            let inflows = 0;
+            let outflows = 0;
             for (const row of this.forecast.rows) {
-                const name = row.stream_name || 'Unknown';
-                if (!lanes[name]) lanes[name] = { name, events: [] };
-                lanes[name].events.push(row);
+                if (dateToDay(row.date) !== day) continue;
+                if (row.amount >= 0) inflows += row.amount;
+                else outflows += row.amount;
             }
-            return Object.values(lanes);
+            return {
+                opening,
+                inflows,
+                outflows,
+                net: inflows + outflows,
+                closing: opening + inflows + outflows,
+            };
         },
-
-        get monthMarkers() {
-            const markers = [];
-            let d = new Date((this.scrubberMin) * 86400000);
-            d.setUTCDate(1);
-            d.setUTCMonth(d.getUTCMonth() + 1);
-            const endDate = new Date(this.scrubberMax * 86400000);
-            while (d <= endDate) {
-                const days = dateToEpochDays(d.toISOString().split('T')[0]);
-                markers.push({
-                    x: (days - this.scrubberMin) * PIXELS_PER_DAY,
-                    label: d.toLocaleDateString('en-US', { month: 'short', year: '2-digit', timeZone: 'UTC' })
-                });
-                d.setUTCMonth(d.getUTCMonth() + 1);
-            }
-            return markers;
+        handlePointer(event) {
+            const rect = this.$refs.chartWrap.getBoundingClientRect();
+            this.chartWidth = Math.max(rect.width, 640);
+            const offset = Math.min(Math.max(event.clientX - rect.left, 0), rect.width);
+            const ratio = rect.width === 0 ? 0 : offset / rect.width;
+            this.hoverDay = Math.round(this.visibleStart + ratio * this.visibleSpan);
         },
-
-        getEventX(dateStr) {
-            const days = dateToEpochDays(dateStr);
-            return (days - this.scrubberMin) * PIXELS_PER_DAY;
+        focusPointerDay(event) {
+            this.handlePointer(event);
+            this.selectedDay = this.hoverDay ?? this.selectedDay;
+            if (!this.editingEvent) this.openComposer();
         },
-
-        updateHero() { /* Alpine reactivity handles this */ },
-
-        selectEvent(event) {
-            this.selectedEvent = event;
-            this.overrideDate = event.date;
-            this.overrideError = null;
+        zoom(event) {
+            const rect = this.$refs.chartWrap.getBoundingClientRect();
+            this.chartWidth = Math.max(rect.width, 640);
+            const pointerRatio = rect.width === 0 ? 0.5 : (event.clientX - rect.left) / rect.width;
+            const anchorDay = this.visibleStart + pointerRatio * this.visibleSpan;
+            const scale = event.deltaY < 0 ? 0.85 : 1.15;
+            const nextSpan = Math.min(this.maxSpan, Math.max(this.minSpan, Math.round(this.visibleSpan * scale)));
+            this.visibleStart = Math.round(anchorDay - pointerRatio * nextSpan);
+            this.visibleSpan = nextSpan;
         },
-
-        async saveExpense() {
-            this.expenseSaving = true;
-            this.expenseError = null;
-            const amount = parseFloat(this.newExpense.amount);
-            if (isNaN(amount) || amount === 0) {
-                this.expenseError = 'Enter a valid non-zero amount.';
-                this.expenseSaving = false;
+        openComposer() {
+            this.editingEvent = null;
+            this.composer = {
+                label: '',
+                stream_id: this.composer.stream_id || '{{ default_stream_id }}',
+                account_id: '',
+                amount: '',
+                date: dayToDate(this.selectedDay),
+            };
+            this.composerError = null;
+        },
+        editEvent(event) {
+            this.selectedDay = dateToDay(event.date);
+            this.editingEvent = event;
+            this.composer = {
+                label: event.label || '',
+                stream_id: String(event.stream_id),
+                account_id: event.account_id ? String(event.account_id) : '',
+                amount: String(event.amount),
+                date: event.date,
+            };
+            this.composerError = null;
+        },
+        resetComposer() {
+            this.openComposer();
+        },
+        async saveComposer() {
+            this.composerSaving = true;
+            this.composerError = null;
+            const amount = Number(this.composer.amount);
+            if (!this.composer.label.trim()) {
+                this.composerError = 'Label is required.';
+                this.composerSaving = false;
                 return;
             }
-            if (!this.newExpense.label.trim()) {
-                this.expenseError = 'Label is required.';
-                this.expenseSaving = false;
+            if (!this.editingEvent && (!Number.isFinite(amount) || amount === 0)) {
+                this.composerError = 'Enter a non-zero amount.';
+                this.composerSaving = false;
                 return;
             }
             try {
-                const res = await fetch('/api/events', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        stream_id: {{ expenses_stream_id }},
-                        label: this.newExpense.label.trim(),
-                        scheduled_date: this.newExpense.date,
-                        amount: -Math.abs(amount)
-                    })
-                });
-                if (res.ok) {
-                    this.showAddExpense = false;
-                    this.newExpense = { label: '', amount: '', date: today };
-                    await this.fetchForecast();
+                if (this.editingEvent) {
+                    const res = await fetch(`/api/events/${this.editingEvent.event_id}`, {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            label: this.composer.label.trim(),
+                            amount,
+                            expected_date: this.composer.date,
+                            account_id: this.composer.account_id ? Number(this.composer.account_id) : null,
+                        }),
+                    });
+                    if (!res.ok) {
+                        const err = await res.json().catch(() => ({}));
+                        throw new Error(err.message || 'Failed to update event.');
+                    }
                 } else {
-                    const err = await res.json();
-                    this.expenseError = err.message || 'Failed to save.';
+                    const res = await fetch('/api/events', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            label: this.composer.label.trim(),
+                            stream_id: Number(this.composer.stream_id),
+                            account_id: this.composer.account_id ? Number(this.composer.account_id) : null,
+                            scheduled_date: this.composer.date,
+                            amount,
+                        }),
+                    });
+                    if (!res.ok) {
+                        const err = await res.json().catch(() => ({}));
+                        throw new Error(err.message || 'Failed to create event.');
+                    }
                 }
-            } catch (e) {
-                this.expenseError = 'Network error.';
+                await this.fetchForecast();
+                this.openComposer();
+            } catch (err) {
+                this.composerError = err.message || 'Save failed.';
             } finally {
-                this.expenseSaving = false;
+                this.composerSaving = false;
             }
         },
-
-        async saveOverride() {
-            if (!this.selectedEvent || !this.overrideDate) return;
-            this.overrideSaving = true;
-            this.overrideError = null;
-            try {
-                const res = await fetch(`/api/events/${this.selectedEvent.event_id}`, {
-                    method: 'PATCH',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ expected_date: this.overrideDate })
-                });
-                if (res.ok) {
-                    this.selectedEvent = null;
-                    await this.fetchForecast();
-                } else {
-                    const err = await res.json();
-                    this.overrideError = err.message || 'Failed to save override.';
-                }
-            } catch (e) {
-                this.overrideError = 'Network error.';
-            } finally {
-                this.overrideSaving = false;
-            }
-        },
-
         async setCashBalance() {
-            const amount = parseFloat(this.cashInput);
-            if (isNaN(amount)) return;
+            const amount = Number(this.cashInput);
+            if (!Number.isFinite(amount)) return;
             try {
-                await fetch('/api/settings/cash', {
+                const res = await fetch('/api/settings/cash', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ amount })
+                    body: JSON.stringify({ amount }),
                 });
-                window.location.reload();
-            } catch (e) {
-                this.error = 'Failed to save cash balance.';
+                if (!res.ok) throw new Error('Failed to save cash balance.');
+                await this.fetchForecast();
+            } catch (err) {
+                this.error = err.message || 'Failed to save cash balance.';
             }
         },
-
+        async syncMonarchBalance() {
+            try {
+                const res = await fetch('/api/sync/balance', { method: 'POST' });
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    throw new Error(err.message || 'Failed to sync Monarch balance.');
+                }
+                await this.fetchForecast();
+            } catch (err) {
+                this.error = err.message || 'Failed to sync Monarch balance.';
+            }
+        },
         async fetchForecast() {
             this.loading = true;
             this.error = null;
-            const from = epochDaysToDate(this.scrubberMin);
-            const through = epochDaysToDate(this.scrubberMax);
+            const from = dayToDate(dateToDay(today) - 120);
+            const through = dayToDate(dateToDay(today) + 365);
             try {
-                const res = await fetch(`/api/forecast?from=${from}&through=${through}`);
-                if (res.ok) {
-                    this.forecast = await res.json();
-                } else {
-                    const err = await res.json();
-                    if (err.error !== 'no_starting_balance') {
-                        this.error = err.message || 'Failed to load forecast.';
-                    }
+                const res = await fetch(`/api/forecast?from=${from}&through=${through}&view_id=${this.selectedViewId}`);
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    throw new Error(err.message || 'Failed to load timeline.');
                 }
-            } catch (e) {
-                this.error = 'Could not load forecast. Check your connection.';
+                this.forecast = await res.json();
+            } catch (err) {
+                this.error = err.message || 'Could not load timeline.';
             } finally {
                 this.loading = false;
             }
         },
-
         init() {
             this.fetchForecast();
-            document.addEventListener('htmx:afterRequest', () => this.fetchForecast());
-        }
+            this.$nextTick(() => {
+                const rect = this.$refs.chartWrap?.getBoundingClientRect();
+                if (rect) this.chartWidth = Math.max(rect.width, 640);
+            });
+            window.addEventListener('resize', () => {
+                const rect = this.$refs.chartWrap?.getBoundingClientRect();
+                if (rect) this.chartWidth = Math.max(rect.width, 640);
+            });
+        },
     };
 }
 </script>
+<style>@keyframes spin { to { transform: rotate(360deg); } }</style>
 {% endblock %}

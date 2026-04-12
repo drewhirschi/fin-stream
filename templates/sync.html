@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 
-{% block nav_sync %}active{% endblock %}
+{% block nav_sync %}active menu-active{% endblock %}
+{% block nav_sync_attrs %}aria-current="page"{% endblock %}
 
 {% block content %}
 <div class="flex items-center justify-between mb-6">
@@ -41,9 +42,9 @@
                hx-swap="innerHTML">
             {% for log in logs %}
             <tr>
-                <td>{{ log.id }}</td>
-                <td>{{ log.started_at[..19] }}</td>
-                <td>{% match log.finished_at %}{% when Some with (f) %}{{ f[..19] }}{% when None %}—{% endmatch %}</td>
+                <td>{{ log.id|number }}</td>
+                <td>{{ log.started_at|datetime }}</td>
+                <td>{% match log.finished_at %}{% when Some with (f) %}{{ f|datetime }}{% when None %}—{% endmatch %}</td>
                 <td>
                     {% if log.status == "success" %}
                         <span class="badge badge-success">{{ log.status }}</span>
@@ -53,8 +54,8 @@
                         <span class="badge badge-warning">{{ log.status }}</span>
                     {% endif %}
                 </td>
-                <td>{{ log.loans_upserted.unwrap_or(0) }}</td>
-                <td>{{ log.events_upserted.unwrap_or(0) }}</td>
+                <td>{{ log.loans_upserted.unwrap_or(0)|number }}</td>
+                <td>{{ log.events_upserted.unwrap_or(0)|number }}</td>
                 <td class="max-w-xs truncate">{{ log.error_message.as_deref().unwrap_or("-") }}</td>
             </tr>
             {% endfor %}

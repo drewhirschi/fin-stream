@@ -1,0 +1,314 @@
+{% extends "integration_base.html" %}
+
+{% block integration_breadcrumb_suffix %}
+<span class="label-dim">/</span>
+<span>Loan</span>
+<span class="label-dim">/</span>
+<span>{{ loan.borrower_name.as_deref().unwrap_or("Unknown borrower") }}</span>
+{% endblock %}
+
+{% block integration_page_content %}
+<div class="flex flex-col gap-6">
+    {% if workspace_saved %}
+    <div class="alert alert-success shadow-sm">Loan workspace saved.</div>
+    {% endif %}
+    {% if workspace_error %}
+    <div class="alert alert-error shadow-sm">Could not save the workspace. Check links and contribution amounts, then try again.</div>
+    {% endif %}
+    {% if photo_uploaded %}
+    <div class="alert alert-success shadow-sm">Photo upload complete.</div>
+    {% endif %}
+    {% if photo_error %}
+    <div class="alert alert-error shadow-sm">Could not upload the photo. Try a JPG, PNG, or WebP file.</div>
+    {% endif %}
+
+    <div class="card bg-base-100 shadow-sm border border-base-300">
+        <div class="card-body">
+            <div class="flex items-start justify-between gap-4">
+                <div>
+                    <h2 class="card-title text-2xl">{{ loan.borrower_name.as_deref().unwrap_or("Unknown borrower") }}</h2>
+                    <p class="label-dim text-sm mt-1">
+                        {{ loan.property_address.as_deref().unwrap_or("No street address") }},
+                        {{ loan.property_city.as_deref().unwrap_or("") }}
+                        {{ loan.property_state.as_deref().unwrap_or("") }}
+                        {{ loan.property_zip.as_deref().unwrap_or("") }}
+                    </p>
+                </div>
+                <div class="flex flex-col items-end gap-2">
+                    <span class="badge badge-outline font-mono">{{ loan.loan_account }}</span>
+                    {% match loan.is_delinquent %}
+                        {% when Some with (1) %}<span class="badge badge-error">Delinquent</span>
+                        {% when _ %}<span class="badge badge-success">Current</span>
+                    {% endmatch %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div class="stat bg-base-100 rounded-box shadow-sm border border-base-300">
+            <div class="stat-title">On-time payments</div>
+            <div class="stat-value text-2xl">{{ on_time_count }}</div>
+        </div>
+        <div class="stat bg-base-100 rounded-box shadow-sm border border-base-300">
+            <div class="stat-title">Late or overdue</div>
+            <div class="stat-value text-2xl">{{ late_count }}</div>
+        </div>
+        <div class="stat bg-base-100 rounded-box shadow-sm border border-base-300">
+            <div class="stat-title">Pending</div>
+            <div class="stat-value text-2xl">{{ pending_count }}</div>
+        </div>
+    </div>
+
+    <div class="flex flex-col gap-6">
+        <div class="card bg-base-100 shadow-sm border border-base-300">
+            <div class="card-body">
+                <h3 class="card-title">Loan Details</h3>
+                <div class="grid grid-cols-2 xl:grid-cols-4 gap-4 text-sm mt-2">
+                    <div>
+                        <div class="label-dim">Principal balance</div>
+                        <div class="font-semibold">{% match loan.principal_balance %}{% when Some with (v) %}${{ v|money }}{% when None %}—{% endmatch %}</div>
+                    </div>
+                    <div>
+                        <div class="label-dim">Original balance</div>
+                        <div class="font-semibold">{% match loan.original_balance %}{% when Some with (v) %}${{ v|money }}{% when None %}—{% endmatch %}</div>
+                    </div>
+                    <div>
+                        <div class="label-dim">Regular payment</div>
+                        <div class="font-semibold">{% match loan.regular_payment %}{% when Some with (v) %}${{ v|money }}{% when None %}—{% endmatch %}</div>
+                    </div>
+                    <div>
+                        <div class="label-dim">Note rate</div>
+                        <div class="font-semibold">{% match loan.note_rate %}{% when Some with (v) %}{{ "{:.2}"|format(v) }}%{% when None %}—{% endmatch %}</div>
+                    </div>
+                    <div>
+                        <div class="label-dim">Next payment</div>
+                        <div class="font-semibold">{{ loan.next_payment_date.as_deref().unwrap_or("—")|date }}</div>
+                    </div>
+                    <div>
+                        <div class="label-dim">Maturity</div>
+                        <div class="font-semibold">{{ loan.maturity_date.as_deref().unwrap_or("—")|date }}</div>
+                    </div>
+                    <div>
+                        <div class="label-dim">Interest paid to</div>
+                        <div class="font-semibold">{{ loan.interest_paid_to.as_deref().unwrap_or("—")|date }}</div>
+                    </div>
+                    <div>
+                        <div class="label-dim">Billed through</div>
+                        <div class="font-semibold">{{ loan.billed_through.as_deref().unwrap_or("—")|date }}</div>
+                    </div>
+                    <div>
+                        <div class="label-dim">Property type</div>
+                        <div class="font-semibold">{{ loan.property_type.as_deref().unwrap_or("—") }}</div>
+                    </div>
+                    <div>
+                        <div class="label-dim">Occupancy</div>
+                        <div class="font-semibold">{{ loan.occupancy.as_deref().unwrap_or("—") }}</div>
+                    </div>
+                    <div>
+                        <div class="label-dim">Ownership</div>
+                        <div class="font-semibold">{% match loan.percent_owned %}{% when Some with (v) %}{{ "{:.1}"|format(v) }}%{% when None %}—{% endmatch %}</div>
+                    </div>
+                    <div>
+                        <div class="label-dim">LTV</div>
+                        <div class="font-semibold">{% match loan.ltv %}{% when Some with (v) %}{{ "{:.1}"|format(v) }}%{% when None %}—{% endmatch %}</div>
+                    </div>
+                    <div class="col-span-2 xl:col-span-4">
+                        <div class="label-dim">Property description</div>
+                        <div class="font-semibold">{{ loan.property_description.as_deref().unwrap_or("—") }}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card bg-base-100 shadow-sm border border-base-300">
+            <div class="card-body">
+                <h3 class="card-title">Payment Timeline</h3>
+                <p class="label-dim text-sm">Recent payment activity imported for this loan.</p>
+
+                {% if payment_history.is_empty() %}
+                <div class="alert alert-info mt-4">No payment history found for this loan yet.</div>
+                {% else %}
+                <div class="overflow-x-auto mt-4">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Check #</th>
+                                <th>Amount</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for payment in payment_history %}
+                            <tr>
+                                <td>
+                                    {{ payment.effective_date|date }}
+                                </td>
+                                <td class="font-mono text-xs">{{ payment.check_number.as_deref().unwrap_or("—") }}</td>
+                                <td>${{ payment.amount|money }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="card bg-base-100 shadow-sm border border-base-300">
+        <div class="card-body">
+            <div class="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                <div>
+                    <h3 class="card-title">Loan Workspace</h3>
+                    <p class="label-dim text-sm">Capture the external links, photos, and investment context that TMO does not keep for you.</p>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                    {% match workspace.redfin_url %}
+                        {% when Some with (url) %}
+                        <a href="{{ url }}" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline">Open Redfin</a>
+                        {% when None %}{% endmatch %}
+                    {% match workspace.zillow_url %}
+                        {% when Some with (url) %}
+                        <a href="{{ url }}" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline">Open Zillow</a>
+                        {% when None %}{% endmatch %}
+                </div>
+            </div>
+
+            {% if workspace_photos.is_empty() %}
+            <div class="alert alert-info mt-4">
+                No cached property photos yet. The next first-time import will try Zillow and Redfin automatically.
+            </div>
+            {% else %}
+            <div class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+                {% for photo in workspace_photos %}
+                <a href="{{ photo.source_url }}" target="_blank" rel="noopener noreferrer" class="group overflow-hidden rounded-box border border-base-300 bg-base-200/40">
+                    <img src="{{ photo.image_url }}"
+                         alt="{{ photo.caption.as_deref().unwrap_or("Property photo") }}"
+                         class="h-56 w-full object-cover transition duration-200 group-hover:scale-[1.02]" />
+                    <div class="flex items-center justify-between gap-3 px-4 py-3 text-sm">
+                        <span class="font-medium capitalize">{{ photo.provider }}</span>
+                        <span class="label-dim">Open source</span>
+                    </div>
+                </a>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            <form method="post"
+                  action="/integrations/{{ connection.slug }}/loans/{{ loan.loan_account }}/workspace/photos"
+                  enctype="multipart/form-data"
+                  class="mt-4 rounded-box border border-dashed border-base-300 bg-base-200/40 p-4">
+                <div class="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+                    <div>
+                        <div class="font-semibold">Manual Photo Upload</div>
+                        <p class="label-dim text-sm mt-1">Drop in a few JPG, PNG, or WebP images and we’ll store them with this loan.</p>
+                    </div>
+                    <div class="flex flex-col gap-3 md:flex-row md:items-end">
+                        <label class="form-control w-full md:w-80">
+                            <div class="label">
+                                <span class="label-text">Property photos</span>
+                            </div>
+                            <input type="file"
+                                   name="photos"
+                                   accept="image/jpeg,image/png,image/webp"
+                                   multiple
+                                   class="file-input file-input-bordered w-full" />
+                        </label>
+                        <button type="submit" class="btn btn-outline">Upload Photos</button>
+                    </div>
+                </div>
+            </form>
+
+            <form method="post" action="/integrations/{{ connection.slug }}/loans/{{ loan.loan_account }}/workspace" class="mt-4 grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-6">
+                <div class="flex flex-col gap-4">
+                    <label class="form-control w-full">
+                        <div class="label">
+                            <span class="label-text">Redfin URL</span>
+                        </div>
+                        <input type="url"
+                               name="redfin_url"
+                               value="{{ workspace.redfin_url.as_deref().unwrap_or("") }}"
+                               placeholder="https://www.redfin.com/..."
+                               class="input input-bordered w-full" />
+                    </label>
+
+                    <label class="form-control w-full">
+                        <div class="label">
+                            <span class="label-text">Zillow URL</span>
+                        </div>
+                        <input type="url"
+                               name="zillow_url"
+                               value="{{ workspace.zillow_url.as_deref().unwrap_or("") }}"
+                               placeholder="https://www.zillow.com/..."
+                               class="input input-bordered w-full" />
+                    </label>
+
+                    <label class="form-control w-full">
+                        <div class="label">
+                            <span class="label-text">Decision Status</span>
+                        </div>
+                        <select name="decision_status" class="select select-bordered w-full">
+                            <option value="" {% if workspace.decision_status.is_none() %}selected{% endif %}>No status yet</option>
+                            <option value="new" {% if workspace.decision_status.as_deref() == Some("new") %}selected{% endif %}>New</option>
+                            <option value="reviewing" {% if workspace.decision_status.as_deref() == Some("reviewing") %}selected{% endif %}>Reviewing</option>
+                            <option value="committed" {% if workspace.decision_status.as_deref() == Some("committed") %}selected{% endif %}>Committed</option>
+                            <option value="funded" {% if workspace.decision_status.as_deref() == Some("funded") %}selected{% endif %}>Funded</option>
+                            <option value="passed" {% if workspace.decision_status.as_deref() == Some("passed") %}selected{% endif %}>Passed</option>
+                        </select>
+                    </label>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <label class="form-control w-full">
+                            <div class="label">
+                                <span class="label-text">Target Contribution</span>
+                            </div>
+                            <input type="number"
+                                   step="0.01"
+                                   min="0"
+                                   name="target_contribution"
+                                   value="{% match workspace.target_contribution %}{% when Some with (v) %}{{ "{:.2}"|format(v) }}{% when None %}{% endmatch %}"
+                                   placeholder="25000.00"
+                                   class="input input-bordered w-full" />
+                        </label>
+
+                        <label class="form-control w-full">
+                            <div class="label">
+                                <span class="label-text">Actual Contribution</span>
+                            </div>
+                            <input type="number"
+                                   step="0.01"
+                                   min="0"
+                                   name="actual_contribution"
+                                   value="{% match workspace.actual_contribution %}{% when Some with (v) %}{{ "{:.2}"|format(v) }}{% when None %}{% endmatch %}"
+                                   placeholder="0.00"
+                                   class="input input-bordered w-full" />
+                        </label>
+                    </div>
+                </div>
+
+                <div class="flex flex-col gap-4">
+                    <label class="form-control w-full">
+                        <div class="label">
+                            <span class="label-text">Notes</span>
+                        </div>
+                        <textarea name="notes"
+                                  rows="12"
+                                  placeholder="Why this deal is interesting, what the risks are, where the docs live, follow-ups, etc."
+                                  class="textarea textarea-bordered w-full">{{ workspace.notes.as_deref().unwrap_or("") }}</textarea>
+                    </label>
+
+                    <div class="rounded-box border border-base-300 bg-base-200/50 p-4 text-sm">
+                        <div class="font-semibold mb-2">Photo Enrichment</div>
+                        <p class="label-dim">On the first import for a loan, Trust Deeds now tries a quick public Zillow and Redfin search, caches any public photos it finds, and keeps the discovered listing links here for later.</p>
+                    </div>
+                </div>
+
+                <div class="xl:col-span-2 flex justify-end">
+                    <button type="submit" class="btn btn-primary">Save Workspace</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

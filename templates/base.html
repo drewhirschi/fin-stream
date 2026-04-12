@@ -8,12 +8,13 @@
     <link rel="stylesheet" href="/static/vendor/css/daisyui-themes.css">
     <script src="/static/vendor/js/tailwindcss.js" type="module"></script>
     <script src="/static/vendor/js/htmx.min.js"></script>
+    <script src="/static/vendor/js/htmx-ext-preload.js"></script>
     <script src="/static/vendor/js/alpine.min.js" defer></script>
     <link rel="stylesheet" href="/static/vault.css">
     <link rel="stylesheet" href="/static/style.css">
     {% block head %}{% endblock %}
 </head>
-<body class="min-h-screen bg-base-200">
+<body class="min-h-screen bg-base-200" hx-boost="true" hx-ext="preload">
     <div class="drawer lg:drawer-open" x-data="{ open: false }">
         <input id="drawer" type="checkbox" class="drawer-toggle" x-model="open">
 
@@ -41,14 +42,15 @@
         <!-- Sidebar -->
         <div class="drawer-side">
             <label for="drawer" class="drawer-overlay"></label>
-            <aside class="bg-base-100 w-64 min-h-full p-4 flex flex-col">
+            <aside class="app-sidebar bg-base-100 w-64 min-h-full p-4 flex flex-col">
                 <div class="text-xl font-bold mb-6 px-2" style="font-family: 'Manrope', system-ui, sans-serif;">Trust Deeds</div>
-                <ul class="menu flex-1">
-                    <li><a href="/" class="{% block nav_dashboard %}{% endblock %}">Dashboard</a></li>
-                    <li><a href="/loans" class="{% block nav_loans %}{% endblock %}">Loans</a></li>
-                    <li><a href="/payments" class="{% block nav_payments %}{% endblock %}">Payments</a></li>
-                    <li><a href="/forecast" class="{% block nav_forecast %}{% endblock %}">Forecast</a></li>
-                    <li><a href="/sync" class="{% block nav_sync %}{% endblock %}">Sync</a></li>
+                <ul class="menu app-nav flex-1" preload="mouseover">
+                    <li><a href="/" class="nav-link {% block nav_dashboard %}{% endblock %}" {% block nav_dashboard_attrs %}{% endblock %}>Dashboard</a></li>
+                    <li><a href="/integrations" class="nav-link {% block nav_integrations %}{% endblock %}" {% block nav_integrations_attrs %}{% endblock %}>Integrations</a></li>
+                    <li><a href="/forecast" class="nav-link {% block nav_forecast %}{% endblock %}" {% block nav_forecast_attrs %}{% endblock %}>Timeline</a></li>
+                    <li><a href="/canvas" class="nav-link {% block nav_canvas %}{% endblock %}" {% block nav_canvas_attrs %}{% endblock %}>Canvas</a></li>
+                    <li><a href="/streams" class="nav-link {% block nav_streams %}{% endblock %}" {% block nav_streams_attrs %}{% endblock %}>Streams</a></li>
+                    <li><a href="/sync" class="nav-link {% block nav_sync %}{% endblock %}" {% block nav_sync_attrs %}{% endblock %}>Sync</a></li>
                 </ul>
 
                 <!-- Answer Badge: cash position at next big expense -->
@@ -73,6 +75,33 @@
         </div>
     </div>
     <script>
+    function wirePreloadTargets(root = document) {
+        const links = root.querySelectorAll('a[href]');
+
+        for (const link of links) {
+            const href = link.getAttribute('href');
+            if (!href) continue;
+
+            const isInternalPath = href.startsWith('/');
+            const isFragment = href.startsWith('#');
+            const isNewTab = link.getAttribute('target') === '_blank';
+            const isDownload = link.hasAttribute('download');
+            const isOptedOut = link.dataset.preload === 'false';
+
+            if (isInternalPath && !isFragment && !isNewTab && !isDownload && !isOptedOut) {
+                link.setAttribute('preload', 'mouseover');
+                if (window.htmx && link.preloadState === undefined) {
+                    htmx.process(link);
+                }
+            } else {
+                link.removeAttribute('preload');
+            }
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => wirePreloadTargets());
+    document.body.addEventListener('htmx:load', (event) => wirePreloadTargets(event.target));
+
     function answerBadge() {
         // Threshold: show cash at the date of the next expense over this amount
         const THRESHOLD = parseFloat(localStorage.getItem('badge_threshold') || '500');

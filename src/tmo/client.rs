@@ -19,9 +19,7 @@ impl TmoClient {
     /// Login and return a client with session cookies.
     pub async fn login(company_id: &str, account: &str, pin: &str) -> anyhow::Result<Self> {
         // reqwest cookie_store handles session cookies automatically
-        let http = Client::builder()
-            .cookie_store(true)
-            .build()?;
+        let http = Client::builder().cookie_store(true).build()?;
 
         let body = serde_json::json!({
             "companyId": company_id,
@@ -63,9 +61,8 @@ impl TmoClient {
     }
 
     pub async fn get_overview(&self) -> anyhow::Result<TmoOverview> {
-        let resp: TmoResponse<TmoOverview> = self
-            .get("/api/overview?showPaidOffLoans=false")
-            .await?;
+        let resp: TmoResponse<TmoOverview> =
+            self.get("/api/overview?showPaidOffLoans=false").await?;
         Ok(resp.data)
     }
 

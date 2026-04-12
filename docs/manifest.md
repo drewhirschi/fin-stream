@@ -173,6 +173,19 @@ The TMO integration pulls all loan and payment data:
 - **Mobile** — web-first, no responsive optimization yet
 - **Multi-user** — personal single-user tool
 
+## Next Feature: Loan Workspace
+
+The next meaningful expansion is to turn each loan into a richer workspace, not just a synced record.
+
+That means:
+
+- Redfin and Zillow links
+- bucket-backed image and document storage
+- linked email threads
+- notes and underwriting context
+
+See [docs/loan-workspace-manifest.md](/Users/drew/w/trust-deeds/docs/loan-workspace-manifest.md) for the dedicated feature manifest.
+
 ---
 
 ## Technical Stack

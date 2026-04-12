@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+
+{% block nav_integrations %}active menu-active{% endblock %}
+{% block nav_integrations_attrs %}aria-current="page"{% endblock %}
+
+{% block content %}
+<div class="flex flex-col gap-3 mb-8">
+    <h1 class="text-2xl font-bold">Integrations</h1>
+    <p class="label-dim max-w-3xl">
+        Each integration gets its own staging area. We import provider data into typed staging tables first, then normalize it into our own streams and events.
+    </p>
+</div>
+
+<section class="mb-10">
+    <h2 class="text-xl font-semibold mb-4">Connections</h2>
+    {% if connections.is_empty() %}
+    <div class="alert alert-info">
+        No integrations have been captured yet. <a href="/sync" class="link">Run a sync</a> to ingest source data.
+    </div>
+    {% else %}
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {% for connection in connections %}
+        <a href="/integrations/{{ connection.slug }}" class="interactive-card card bg-base-100 shadow-sm border border-base-300 no-underline">
+            <div class="card-body gap-3">
+                <div class="flex items-start justify-between gap-3">
+                    <div>
+                        <h3 class="card-title">{{ connection.name }}</h3>
+                        <div class="label-dim text-sm">{{ connection.provider }}</div>
+                    </div>
+                    {% if connection.status == "error" %}
+                        <span class="badge badge-error">Error</span>
+                    {% else %}
+                        <span class="badge badge-success">Active</span>
+                    {% endif %}
+                </div>
+                <div class="grid grid-cols-3 gap-3 text-sm">
+                    <div>
+                        <div class="label-dim text-xs uppercase">Raw Records</div>
+                        <div class="font-semibold">{{ connection.record_count|number }}</div>
+                    </div>
+                    <div>
+                        <div class="label-dim text-xs uppercase">Normalized</div>
+                        <div class="font-semibold">{{ connection.normalized_count|number }}</div>
+                    </div>
+                    <div>
+                        <div class="label-dim text-xs uppercase">Pending</div>
+                        <div class="font-semibold">{{ connection.pending_count|number }}</div>
+                    </div>
+                </div>
+                <div class="text-sm">
+                    <span class="label-dim">Last synced:</span>
+                    {{ connection.last_synced_at.as_deref().unwrap_or("Never")|datetime }}
+                </div>
+                <div class="pt-2 text-sm text-primary font-medium">
+                    Open integration
+                </div>
+                {% match connection.last_error %}
+                    {% when Some with (message) %}
+                    <div class="alert alert-error py-2 text-sm">{{ message }}</div>
+                    {% when None %}{% endmatch %}
+            </div>
+        </a>
+        {% endfor %}
+    </div>
+    {% endif %}
+</section>
+{% endblock %}

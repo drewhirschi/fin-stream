@@ -106,7 +106,11 @@ impl MonarchClient {
             if !errors.is_empty() {
                 anyhow::bail!(
                     "Monarch GraphQL error: {}",
-                    errors.iter().map(|e| e.message.as_str()).collect::<Vec<_>>().join(", ")
+                    errors
+                        .iter()
+                        .map(|e| e.message.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
                 );
             }
         }
@@ -117,7 +121,10 @@ impl MonarchClient {
     }
 
     /// Fetch pending transactions for a specific account.
-    pub async fn get_pending_transactions(&self, account_id: &str) -> anyhow::Result<Vec<Transaction>> {
+    pub async fn get_pending_transactions(
+        &self,
+        account_id: &str,
+    ) -> anyhow::Result<Vec<Transaction>> {
         let query = r#"
             query GetPendingTransactions($filters: TransactionFilterInput) {
                 allTransactions(filters: $filters) {
@@ -147,28 +154,46 @@ impl MonarchClient {
 
         if let Some(errors) = &resp.errors {
             if !errors.is_empty() {
-                tracing::warn!("Monarch pending transactions query had errors: {:?}", errors);
+                tracing::warn!(
+                    "Monarch pending transactions query had errors: {:?}",
+                    errors
+                );
             }
         }
 
         Ok(resp
             .data
-            .map(|d| d.all_transactions.results.into_iter().filter(|t| t.pending).collect())
+            .map(|d| {
+                d.all_transactions
+                    .results
+                    .into_iter()
+                    .filter(|t| t.pending)
+                    .collect()
+            })
             .unwrap_or_default())
     }
 
     /// Fetch account balance adjusted for pending transactions.
     /// Returns (reported_balance, adjusted_balance, pending_total).
-    pub async fn get_adjusted_balance(&self, account_id: &str) -> anyhow::Result<(AccountBalance, f64, f64)> {
+    pub async fn get_adjusted_balance(
+        &self,
+        account_id: &str,
+    ) -> anyhow::Result<(AccountBalance, f64, f64)> {
         let balance = self.get_account_balance(account_id).await?;
-        let pending = self.get_pending_transactions(account_id).await.unwrap_or_default();
+        let pending = self
+            .get_pending_transactions(account_id)
+            .await
+            .unwrap_or_default();
 
         let pending_total: f64 = pending.iter().map(|t| t.amount).sum();
         let adjusted = balance.current_balance + pending_total; // pending amounts are negative
 
         tracing::info!(
             "Monarch {} balance: ${:.2} reported, ${:.2} pending, ${:.2} adjusted",
-            balance.display_name, balance.current_balance, pending_total, adjusted
+            balance.display_name,
+            balance.current_balance,
+            pending_total,
+            adjusted
         );
 
         Ok((balance, adjusted, pending_total))

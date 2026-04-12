@@ -1,57 +1,52 @@
 -- Income Streams - Database Schema
--- SQLite 3
-
-PRAGMA journal_mode = WAL;
-PRAGMA foreign_keys = ON;
-PRAGMA busy_timeout = 5000;
-PRAGMA synchronous = NORMAL;
+-- PostgreSQL
 
 -- ============================================================
 -- Core Tables
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS stream (
-    id          INTEGER PRIMARY KEY,
+    id          BIGSERIAL PRIMARY KEY,
     name        TEXT    NOT NULL,
     type        TEXT    NOT NULL,  -- 'mortgage_portfolio', 'salary', 'manual'
     description TEXT,
     is_active   INTEGER NOT NULL DEFAULT 1,
-    created_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-    updated_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    created_at  TEXT    NOT NULL DEFAULT TO_CHAR(NOW() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
+    updated_at  TEXT    NOT NULL DEFAULT TO_CHAR(NOW() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
 );
 
 CREATE TABLE IF NOT EXISTS stream_event (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    stream_id       INTEGER NOT NULL REFERENCES stream(id),
+    id              BIGSERIAL PRIMARY KEY,
+    stream_id       BIGINT NOT NULL REFERENCES stream(id),
     label           TEXT,
-    scheduled_date  TEXT    NOT NULL,
-    expected_date   TEXT,           -- manual override: when it'll actually land
-    actual_date     TEXT,           -- when it actually happened
-    amount          REAL    NOT NULL,
+    scheduled_date  DATE    NOT NULL,
+    expected_date   DATE,           -- manual override: when it'll actually land
+    actual_date     DATE,           -- when it actually happened
+    amount          DOUBLE PRECISION NOT NULL,
     status          TEXT    NOT NULL DEFAULT 'projected',  -- projected, confirmed, received, late, missed
     source_id       TEXT,           -- external ref (check number, etc.)
     source_type     TEXT,           -- 'tmo_history', 'manual', 'schedule'
     metadata        TEXT,           -- JSON blob for type-specific data
     notes           TEXT,
-    created_at      TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-    updated_at      TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    created_at      TEXT    NOT NULL DEFAULT TO_CHAR(NOW() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
+    updated_at      TEXT    NOT NULL DEFAULT TO_CHAR(NOW() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
 
     UNIQUE(stream_id, source_type, source_id)
 );
 
 CREATE TABLE IF NOT EXISTS stream_schedule (
-    id           INTEGER PRIMARY KEY,
-    stream_id    INTEGER NOT NULL REFERENCES stream(id),
+    id           BIGSERIAL PRIMARY KEY,
+    stream_id    BIGINT NOT NULL REFERENCES stream(id),
     label        TEXT,
-    amount       REAL    NOT NULL,
+    amount       DOUBLE PRECISION NOT NULL,
     frequency    TEXT    NOT NULL,  -- 'monthly', 'bimonthly', 'weekly'
     day_of_month INTEGER,          -- for monthly; -1 = last day
     start_date   TEXT    NOT NULL,
     end_date     TEXT,              -- NULL = indefinite
     is_active    INTEGER NOT NULL DEFAULT 1,
     metadata     TEXT,              -- JSON blob
-    created_at   TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-    updated_at   TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    created_at   TEXT    NOT NULL DEFAULT TO_CHAR(NOW() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
+    updated_at   TEXT    NOT NULL DEFAULT TO_CHAR(NOW() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
 );
 
 -- ============================================================
@@ -59,20 +54,20 @@ CREATE TABLE IF NOT EXISTS stream_schedule (
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS tmo_account (
-    id              INTEGER PRIMARY KEY CHECK (id = 1),
+    id              BIGINT PRIMARY KEY CHECK (id = 1),
     company_id      TEXT    NOT NULL,
     account_number  TEXT    NOT NULL,
     source_rec_id   TEXT,
     display_name    TEXT,
     email           TEXT,
     last_login_at   TEXT,
-    created_at      TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-    updated_at      TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    created_at      TEXT    NOT NULL DEFAULT TO_CHAR(NOW() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
+    updated_at      TEXT    NOT NULL DEFAULT TO_CHAR(NOW() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
 );
 
 CREATE TABLE IF NOT EXISTS tmo_loan (
     loan_account      TEXT    PRIMARY KEY,
-    stream_id         INTEGER REFERENCES stream(id),
+    stream_id         BIGINT REFERENCES stream(id),
     borrower_name     TEXT,
     property_address  TEXT,
     property_city     TEXT,
@@ -81,39 +76,39 @@ CREATE TABLE IF NOT EXISTS tmo_loan (
     property_type     TEXT,
     property_priority INTEGER,
     occupancy         TEXT,
-    appraised_value   REAL,
-    ltv               REAL,
-    percent_owned     REAL,
+    appraised_value   DOUBLE PRECISION,
+    ltv               DOUBLE PRECISION,
+    percent_owned     DOUBLE PRECISION,
     loan_type         INTEGER,
-    note_rate         REAL,
-    original_balance  REAL,
-    principal_balance REAL,
-    regular_payment   REAL,
+    note_rate         DOUBLE PRECISION,
+    original_balance  DOUBLE PRECISION,
+    principal_balance DOUBLE PRECISION,
+    regular_payment   DOUBLE PRECISION,
     payment_frequency TEXT    DEFAULT 'Monthly',
-    maturity_date     TEXT,
-    next_payment_date TEXT,
-    interest_paid_to  TEXT,
+    maturity_date     DATE,
+    next_payment_date DATE,
+    interest_paid_to  DATE,
     term_left_months  INTEGER,
     is_delinquent     INTEGER DEFAULT 0,
     is_active         INTEGER DEFAULT 1,
     last_synced_at    TEXT,
     detail_synced_at  TEXT,
-    created_at        TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-    updated_at        TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    created_at        TEXT    NOT NULL DEFAULT TO_CHAR(NOW() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
+    updated_at        TEXT    NOT NULL DEFAULT TO_CHAR(NOW() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
 );
 
 CREATE TABLE IF NOT EXISTS portfolio_snapshot (
-    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
-    snapshot_date      TEXT    NOT NULL UNIQUE,
-    portfolio_value    REAL,
-    portfolio_yield    REAL,
+    id                 BIGSERIAL PRIMARY KEY,
+    snapshot_date      DATE    NOT NULL UNIQUE,
+    portfolio_value    DOUBLE PRECISION,
+    portfolio_yield    DOUBLE PRECISION,
     portfolio_count    INTEGER,
-    ytd_interest       REAL,
-    ytd_principal      REAL,
-    trust_balance      REAL,
-    outstanding_checks REAL,
-    service_fees       REAL,
-    synced_at          TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    ytd_interest       DOUBLE PRECISION,
+    ytd_principal      DOUBLE PRECISION,
+    trust_balance      DOUBLE PRECISION,
+    outstanding_checks DOUBLE PRECISION,
+    service_fees       DOUBLE PRECISION,
+    synced_at          TEXT    NOT NULL DEFAULT TO_CHAR(NOW() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
 );
 
 -- ============================================================
@@ -121,7 +116,7 @@ CREATE TABLE IF NOT EXISTS portfolio_snapshot (
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS sync_log (
-    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    id                BIGSERIAL PRIMARY KEY,
     started_at        TEXT    NOT NULL,
     finished_at       TEXT,
     status            TEXT    NOT NULL DEFAULT 'running',
@@ -135,7 +130,7 @@ CREATE TABLE IF NOT EXISTS sync_log (
 CREATE TABLE IF NOT EXISTS settings (
     key        TEXT PRIMARY KEY,
     value      TEXT NOT NULL,
-    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    updated_at TEXT NOT NULL DEFAULT TO_CHAR(NOW() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
 );
 
 -- ============================================================
@@ -145,8 +140,8 @@ CREATE TABLE IF NOT EXISTS settings (
 -- Timeline queries
 CREATE INDEX IF NOT EXISTS idx_event_stream_scheduled ON stream_event(stream_id, scheduled_date);
 CREATE INDEX IF NOT EXISTS idx_event_expected         ON stream_event(expected_date) WHERE expected_date IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_event_actual            ON stream_event(actual_date) WHERE actual_date IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_event_status            ON stream_event(status);
+CREATE INDEX IF NOT EXISTS idx_event_actual           ON stream_event(actual_date) WHERE actual_date IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_event_status           ON stream_event(status);
 
 -- Schedules
 CREATE INDEX IF NOT EXISTS idx_schedule_stream_active ON stream_schedule(stream_id, is_active) WHERE is_active = 1;

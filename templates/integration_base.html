@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+
+{% block nav_integrations %}active menu-active{% endblock %}
+{% block nav_integrations_attrs %}aria-current="page"{% endblock %}
+
+{% block content %}
+<div class="flex items-center gap-3 mb-6 text-sm">
+    <a href="/integrations" class="link link-hover">Integrations</a>
+    <span class="label-dim">/</span>
+    {% if current_section == "overview" %}
+    <span>{{ connection.name }}</span>
+    {% else %}
+    <a href="/integrations/{{ connection.slug }}" class="link link-hover">{{ connection.name }}</a>
+    {% endif %}
+    {% block integration_breadcrumb_suffix %}{% endblock %}
+</div>
+
+<div class="flex flex-col gap-3 mb-8">
+    <div class="flex items-start justify-between gap-4">
+        <div>
+            <h1 class="text-2xl font-bold">{{ connection.name }}</h1>
+            <p class="label-dim mt-1">{{ connection.provider }}</p>
+        </div>
+        {% if connection.status == "error" %}
+            <span class="badge badge-error">Error</span>
+        {% else %}
+            <span class="badge badge-success">Active</span>
+        {% endif %}
+    </div>
+
+    {% match connection.last_error %}
+        {% when Some with (message) %}
+        <div class="alert alert-error py-2 text-sm">{{ message }}</div>
+        {% when None %}{% endmatch %}
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-[15rem_minmax(0,1fr)] gap-6 items-start">
+    <aside class="card integration-sidebar bg-base-100 shadow-sm border border-base-300">
+        <div class="card-body p-4">
+            <div class="text-xs uppercase tracking-wide label-dim mb-3">Workspace</div>
+            <ul class="menu integration-nav gap-1" preload="mouseover">
+                <li>
+                    <a href="/integrations/{{ connection.slug }}"
+                       class="nav-link {% if current_section == "overview" %}active menu-active{% endif %}"
+                       {% if current_section == "overview" %}aria-current="page"{% endif %}>
+                        Overview
+                    </a>
+                </li>
+                {% if connection.slug == "tmo" %}
+                <li>
+                    <a href="/integrations/{{ connection.slug }}/loans"
+                       class="nav-link {% if current_section == "loans" %}active menu-active{% endif %}"
+                       {% if current_section == "loans" %}aria-current="page"{% endif %}>
+                        Loans
+                    </a>
+                </li>
+                <li>
+                    <a href="/integrations/{{ connection.slug }}/payments"
+                       class="nav-link {% if current_section == "payments" %}active menu-active{% endif %}"
+                       {% if current_section == "payments" %}aria-current="page"{% endif %}>
+                        Payments
+                    </a>
+                </li>
+                {% endif %}
+                <li>
+                    <a href="/integrations/{{ connection.slug }}/sync"
+                       class="nav-link {% if current_section == "sync" %}active menu-active{% endif %}"
+                       {% if current_section == "sync" %}aria-current="page"{% endif %}>
+                        Sync
+                    </a>
+                </li>
+                <li>
+                    <a href="/integrations/{{ connection.slug }}/debug"
+                       class="nav-link {% if current_section == "debug" %}active menu-active{% endif %}"
+                       {% if current_section == "debug" %}aria-current="page"{% endif %}>
+                        Debug
+                    </a>
+                </li>
+            </ul>
+        </div>
+    </aside>
+
+    <section class="min-w-0">
+        {% block integration_page_content %}{% endblock %}
+    </section>
+</div>
+{% endblock %}

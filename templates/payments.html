@@ -3,11 +3,16 @@
 {% block nav_payments %}active{% endblock %}
 
 {% block content %}
-<h1 class="text-2xl font-bold mb-6">Payments</h1>
+<div class="flex flex-col gap-4 mb-6 md:flex-row md:items-end md:justify-between">
+    <div>
+        <h1 class="text-2xl font-bold">Payments</h1>
+        <p class="label-dim mt-1">Showing pulled payment history only.</p>
+    </div>
+</div>
 
 {% if payments.is_empty() %}
 <div class="alert alert-info">
-    No payment data yet. <a href="/sync" class="link">Run a sync</a> to pull data from The Mortgage Office.
+    No pulled payment data yet. <a href="/sync" class="link">Run a sync</a> to pull data from The Mortgage Office.
 </div>
 {% else %}
 <div class="overflow-x-auto">
@@ -15,26 +20,55 @@
         <thead>
             <tr>
                 <th>Date</th>
+                <th>Kind</th>
+                <th>Loan</th>
+                <th>Check #</th>
                 <th>Source</th>
                 <th>Amount</th>
-                <th>Status</th>
+                <th>State</th>
             </tr>
         </thead>
         <tbody>
             {% for p in payments %}
             <tr>
-                <td>{{ p.actual_date.as_deref().unwrap_or(&p.scheduled_date) }}</td>
-                <td>{{ p.label.as_deref().unwrap_or("-") }}</td>
-                <td class="{% if p.status == "received" %}text-success{% endif %}">
-                    ${{ "{:.2}"|format(p.amount) }}
+                <td>
+                    {% if p.actual_date.is_some() %}
+                        <div>{{ p.actual_date.as_deref().unwrap_or(&p.scheduled_date)|date }}</div>
+                        <div class="label-dim text-xs">Actual date</div>
+                    {% else if p.expected_date.is_some() %}
+                        <div>{{ p.expected_date.as_deref().unwrap_or(&p.scheduled_date)|date }}</div>
+                        <div class="label-dim text-xs">Expected date</div>
+                    {% else %}
+                        <div>{{ p.scheduled_date|date }}</div>
+                        <div class="label-dim text-xs">Scheduled date</div>
+                    {% endif %}
                 </td>
                 <td>
-                    {% if p.status == "received" %}
-                        <span class="badge badge-success badge-sm">Received</span>
-                    {% else if p.status == "projected" %}
-                        <span class="badge badge-info badge-sm">Projected</span>
+                    {% if p.source_type.as_deref() == Some("tmo_history") && p.actual_date.is_none() %}
+                        {% if p.is_pending_print_check %}
+                            <span class="badge badge-warning badge-sm">Printed check</span>
+                        {% else %}
+                            <span class="badge badge-info badge-sm">TMO expected</span>
+                        {% endif %}
+                    {% else if p.is_pending_print_check %}
+                        <span class="badge badge-warning badge-sm">Printed check</span>
                     {% else %}
-                        <span class="badge badge-sm">{{ p.status }}</span>
+                        <span class="badge badge-neutral badge-sm">Pulled history</span>
+                    {% endif %}
+                </td>
+                <td class="font-mono text-xs">{{ p.loan_account.as_deref().unwrap_or("—") }}</td>
+                <td class="font-mono text-xs">{{ p.check_number.as_deref().unwrap_or("—") }}</td>
+                <td>{{ p.label.as_deref().unwrap_or("-") }}</td>
+                <td class="{% if p.actual_date.is_some() %}text-success{% else if p.expected_date.is_some() %}text-warning{% else %}text-info{% endif %}">
+                    ${{ p.amount|money }}
+                </td>
+                <td>
+                    {% if p.actual_date.is_some() %}
+                        <span class="badge badge-success badge-sm">Actual</span>
+                    {% else if p.expected_date.is_some() %}
+                        <span class="badge badge-warning badge-sm">Expected</span>
+                    {% else %}
+                        <span class="badge badge-info badge-sm">Scheduled</span>
                     {% endif %}
                 </td>
             </tr>

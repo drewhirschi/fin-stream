@@ -1,0 +1,102 @@
+{% extends "integration_base.html" %}
+
+{% block integration_breadcrumb_suffix %}
+<span class="label-dim">/</span>
+<span>Sync</span>
+{% endblock %}
+
+{% block integration_page_content %}
+<div class="grid grid-cols-1 xl:grid-cols-[20rem_minmax(0,1fr)] gap-6">
+    <div class="card bg-base-100 shadow-sm border border-base-300"
+         x-data="{ cron: '{{ connection.sync_cadence|escape }}' }">
+        <div class="card-body">
+            <h2 class="card-title text-lg">Sync Settings</h2>
+            <p class="label-dim text-sm">Save a cron expression for this integration. The shortcuts just fill in a cron for you so we keep one consistent format.</p>
+            <form class="space-y-4"
+                  hx-post="/integrations/{{ connection.slug }}/sync/cadence"
+                  hx-target="#sync-cadence-feedback"
+                  hx-swap="innerHTML">
+                <label class="form-control w-full">
+                    <span class="label-text mb-2">Cron expression</span>
+                    <input class="input input-bordered w-full font-mono text-sm"
+                           type="text"
+                           name="sync_cadence"
+                           x-model="cron"
+                           placeholder="0 * * * *">
+                </label>
+                <div class="flex flex-wrap gap-2">
+                    <button type="button" class="btn btn-xs btn-ghost" @click="cron = ''">Clear</button>
+                    <button type="button" class="btn btn-xs btn-ghost" @click="cron = '0 * * * *'">Hourly</button>
+                    <button type="button" class="btn btn-xs btn-ghost" @click="cron = '0 6 * * *'">Daily 6am</button>
+                    <button type="button" class="btn btn-xs btn-ghost" @click="cron = '0 6 * * 1'">Weekly Mon 6am</button>
+                </div>
+                <p class="label-dim text-xs">Examples: <span class="font-mono">0 * * * *</span>, <span class="font-mono">30 7 * * 1-5</span>, <span class="font-mono">0 9 * * 1</span>.</p>
+                <button type="submit" class="btn btn-sm btn-outline">Save cadence</button>
+            </form>
+            <div id="sync-cadence-feedback" class="min-h-6"></div>
+            <div class="divider my-2"></div>
+            <button class="btn btn-primary"
+                    hx-post="/integrations/{{ connection.slug }}/sync/run"
+                    hx-target="#integration-sync-status"
+                    hx-swap="innerHTML">
+                Sync now
+            </button>
+            <div id="integration-sync-status"
+                 hx-get="/integrations/{{ connection.slug }}/sync/status"
+                 hx-trigger="load"
+                 hx-swap="innerHTML"></div>
+        </div>
+    </div>
+    <div class="card bg-base-100 shadow-sm border border-base-300">
+        <div class="card-body">
+            <div class="flex items-center justify-between gap-4 mb-4">
+                <div>
+                    <h2 class="card-title">Syncs</h2>
+                    <p class="label-dim text-sm mt-1">Recent sync runs for this integration only.</p>
+                </div>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="table table-sm bg-base-100">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Started</th>
+                            <th>Finished</th>
+                            <th>Status</th>
+                            <th>Loans</th>
+                            <th>Events</th>
+                            <th>Endpoints</th>
+                            <th>Error</th>
+                        </tr>
+                    </thead>
+                    <tbody id="integration-sync-logs"
+                           hx-get="/integrations/{{ connection.slug }}/sync/logs"
+                           hx-trigger="load, every 5s"
+                           hx-swap="innerHTML">
+                        {% for log in sync_logs %}
+                        <tr>
+                            <td>{{ log.id|number }}</td>
+                            <td>{{ log.started_at|datetime }}</td>
+                            <td>{% match log.finished_at %}{% when Some with (f) %}{{ f|datetime }}{% when None %}-{% endmatch %}</td>
+                            <td>
+                                {% if log.status == "success" %}
+                                <span class="badge badge-success badge-sm">{{ log.status }}</span>
+                                {% else if log.status == "error" %}
+                                <span class="badge badge-error badge-sm">{{ log.status }}</span>
+                                {% else %}
+                                <span class="badge badge-warning badge-sm">{{ log.status }}</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ log.loans_upserted.unwrap_or(0)|number }}</td>
+                            <td>{{ log.events_upserted.unwrap_or(0)|number }}</td>
+                            <td class="max-w-xs truncate">{{ log.endpoints_hit.as_deref().unwrap_or("-") }}</td>
+                            <td class="max-w-xs truncate">{{ log.error_message.as_deref().unwrap_or("-") }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

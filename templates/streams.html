@@ -1,0 +1,359 @@
+{% extends "base.html" %}
+
+{% block nav_streams %}active menu-active{% endblock %}
+{% block nav_streams_attrs %}aria-current="page"{% endblock %}
+
+{% block content %}
+<div class="vault" x-data="streamsManager()">
+    <div class="flex flex-col gap-8">
+        <section>
+            <div class="flex items-end justify-between gap-4 mb-4">
+                <div>
+                    <h1 class="text-3xl">Streams</h1>
+                    <p class="label-dim mt-1">Configure accounts, stream lanes, and merged views in one place.</p>
+                </div>
+            </div>
+
+            <div class="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
+                {% for account in accounts %}
+                <form class="surface-low p-4 flex flex-col gap-3"
+                      @submit.prevent="submitForm($el, '/api/accounts/{{ account.id }}', 'PATCH')">
+                    <div class="flex items-center justify-between gap-3">
+                        <h2 class="text-lg">{{ account.name }}</h2>
+                        {% if account.is_primary == 1 %}
+                        <span class="chip-positive">Primary</span>
+                        {% endif %}
+                    </div>
+                    <label class="flex flex-col gap-1">
+                        <span class="label-dim">Name</span>
+                        <input class="input input-sm bg-base-100" type="text" name="name" value="{{ account.name }}">
+                    </label>
+                    <label class="flex flex-col gap-1">
+                        <span class="label-dim">Kind</span>
+                        <select class="select select-sm bg-base-100" name="kind">
+                            <option value="cash" {% if account.kind == "cash" %}selected{% endif %}>Cash</option>
+                            <option value="checking" {% if account.kind == "checking" %}selected{% endif %}>Checking</option>
+                            <option value="savings" {% if account.kind == "savings" %}selected{% endif %}>Savings</option>
+                            <option value="credit" {% if account.kind == "credit" %}selected{% endif %}>Credit</option>
+                        </select>
+                    </label>
+                    <label class="flex flex-col gap-1">
+                        <span class="label-dim">Balance</span>
+                        <input class="input input-sm bg-base-100 mono" type="number" step="0.01" name="balance"
+                               value="{% match account.balance %}{% when Some with (balance) %}{{ "{:.2}"|format(balance) }}{% when None %}{% endmatch %}">
+                    </label>
+                    <label class="flex items-center gap-2 text-sm">
+                        <input type="checkbox" class="checkbox checkbox-sm" name="is_primary" value="1" {% if account.is_primary == 1 %}checked{% endif %}>
+                        Make primary cash source
+                    </label>
+                    <label class="flex flex-col gap-1">
+                        <span class="label-dim">Notes</span>
+                        <textarea class="textarea textarea-sm bg-base-100" name="notes" rows="2">{% match account.notes %}{% when Some with (notes) %}{{ notes }}{% when None %}{% endmatch %}</textarea>
+                    </label>
+                    <div class="label-dim">
+                        {% match account.source_type %}
+                        {% when Some with (source_type) %}Source: {{ source_type }}
+                        {% when None %}Source: manual
+                        {% endmatch %}
+                        {% match account.balance_updated_at %}
+                        {% when Some with (updated_at) %}<span class="block">Updated {{ updated_at|datetime }}</span>
+                        {% when None %}{% endmatch %}
+                    </div>
+                    <button class="emerald-pulse px-4 py-2 rounded-lg font-semibold text-sm cursor-pointer self-start" type="submit">
+                        Save Account
+                    </button>
+                </form>
+                {% endfor %}
+
+                <form class="surface-high p-4 flex flex-col gap-3"
+                      @submit.prevent="submitForm($el, '/api/accounts', 'POST')">
+                    <h2 class="text-lg">Add Account</h2>
+                    <label class="flex flex-col gap-1">
+                        <span class="label-dim">Name</span>
+                        <input class="input input-sm bg-base-100" type="text" name="name" placeholder="Main Checking">
+                    </label>
+                    <label class="flex flex-col gap-1">
+                        <span class="label-dim">Kind</span>
+                        <select class="select select-sm bg-base-100" name="kind">
+                            <option value="cash">Cash</option>
+                            <option value="checking">Checking</option>
+                            <option value="savings">Savings</option>
+                            <option value="credit">Credit</option>
+                        </select>
+                    </label>
+                    <label class="flex flex-col gap-1">
+                        <span class="label-dim">Starting balance</span>
+                        <input class="input input-sm bg-base-100 mono" type="number" step="0.01" name="balance" placeholder="0.00">
+                    </label>
+                    <label class="flex items-center gap-2 text-sm">
+                        <input type="checkbox" class="checkbox checkbox-sm" name="is_primary" value="1">
+                        Make primary cash source
+                    </label>
+                    <label class="flex flex-col gap-1">
+                        <span class="label-dim">Notes</span>
+                        <textarea class="textarea textarea-sm bg-base-100" name="notes" rows="2" placeholder="Optional"></textarea>
+                    </label>
+                    <button class="emerald-pulse px-4 py-2 rounded-lg font-semibold text-sm cursor-pointer self-start" type="submit">
+                        Add Account
+                    </button>
+                </form>
+            </div>
+        </section>
+
+        <section>
+            <div class="mb-4">
+                <h2 class="text-2xl">Streams</h2>
+                <p class="label-dim mt-1">Each stream is a lane of dated cash activity. Direction comes from the amount sign on events.</p>
+            </div>
+
+            <div class="grid gap-4 xl:grid-cols-2">
+                {% for stream in streams %}
+                <form class="surface-low p-4 flex flex-col gap-3"
+                      @submit.prevent="submitForm($el, '/api/streams/{{ stream.id }}', 'PATCH')">
+                    <div class="flex items-center justify-between gap-3">
+                        <h3 class="text-lg">{{ stream.name }}</h3>
+                        <span class="label-dim">{{ stream.kind }}</span>
+                    </div>
+                    <label class="flex flex-col gap-1">
+                        <span class="label-dim">Name</span>
+                        <input class="input input-sm bg-base-100" type="text" name="name" value="{{ stream.name }}">
+                    </label>
+                    <div class="grid gap-3 md:grid-cols-2">
+                        <label class="flex flex-col gap-1">
+                            <span class="label-dim">Kind</span>
+                            <select class="select select-sm bg-base-100" name="kind">
+                                <option value="manual_income" {% if stream.kind == "manual_income" %}selected{% endif %}>One-off income</option>
+                                <option value="manual_expense" {% if stream.kind == "manual_expense" %}selected{% endif %}>One-off expense</option>
+                                <option value="credit_card" {% if stream.kind == "credit_card" %}selected{% endif %}>Credit card</option>
+                                <option value="tmo_trust" {% if stream.kind == "tmo_trust" %}selected{% endif %}>Trust deeds</option>
+                                <option value="manual" {% if stream.kind == "manual" %}selected{% endif %}>General</option>
+                            </select>
+                        </label>
+                        <label class="flex flex-col gap-1">
+                            <span class="label-dim">Default account</span>
+                            <select class="select select-sm bg-base-100" name="default_account_id">
+                                <option value="">None</option>
+                                {% for account in accounts %}
+                                <option value="{{ account.id }}" {% if stream.default_account_id == account.id %}selected{% endif %}>
+                                    {{ account.name }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </label>
+                    </div>
+                    <label class="flex flex-col gap-1">
+                        <span class="label-dim">Description</span>
+                        <textarea class="textarea textarea-sm bg-base-100" name="description" rows="2">{% match stream.description %}{% when Some with (description) %}{{ description }}{% when None %}{% endmatch %}</textarea>
+                    </label>
+                    <div class="grid gap-3 md:grid-cols-3">
+                        <label class="flex flex-col gap-1">
+                            <span class="label-dim">Schedule</span>
+                            <select class="select select-sm bg-base-100" name="schedule_frequency">
+                                <option value="">None</option>
+                                <option value="monthly" {% if stream.schedule_frequency.as_deref() == Some("monthly") %}selected{% endif %}>Monthly</option>
+                            </select>
+                        </label>
+                        <label class="flex flex-col gap-1">
+                            <span class="label-dim">Due day</span>
+                            <input class="input input-sm bg-base-100 mono" type="number" min="1" max="31" name="due_day"
+                                   value="{% match stream.due_day %}{% when Some with (day) %}{{ day }}{% when None %}{% endmatch %}">
+                        </label>
+                        <label class="flex flex-col gap-1">
+                            <span class="label-dim">Default amount</span>
+                            <input class="input input-sm bg-base-100 mono" type="number" step="0.01" name="schedule_amount"
+                                   value="{% match stream.schedule_amount %}{% when Some with (amount) %}{{ "{:.2}"|format(amount) }}{% when None %}{% endmatch %}">
+                        </label>
+                    </div>
+                    <label class="flex flex-col gap-1">
+                        <span class="label-dim">Schedule start</span>
+                        <input class="input input-sm bg-base-100 mono" type="date" name="start_date"
+                               value="{% match stream.schedule_start_date %}{% when Some with (start) %}{{ start }}{% when None %}{% endmatch %}">
+                    </label>
+                    <button class="emerald-pulse px-4 py-2 rounded-lg font-semibold text-sm cursor-pointer self-start" type="submit">
+                        Save Stream
+                    </button>
+                </form>
+                {% endfor %}
+
+                <form class="surface-high p-4 flex flex-col gap-3"
+                      @submit.prevent="submitForm($el, '/api/streams', 'POST')">
+                    <h3 class="text-lg">Add Stream</h3>
+                    <label class="flex flex-col gap-1">
+                        <span class="label-dim">Name</span>
+                        <input class="input input-sm bg-base-100" type="text" name="name" placeholder="Property Taxes">
+                    </label>
+                    <div class="grid gap-3 md:grid-cols-2">
+                        <label class="flex flex-col gap-1">
+                            <span class="label-dim">Kind</span>
+                            <select class="select select-sm bg-base-100" name="kind">
+                                <option value="manual_expense">One-off expense</option>
+                                <option value="manual_income">One-off income</option>
+                                <option value="credit_card">Credit card</option>
+                                <option value="manual">General</option>
+                            </select>
+                        </label>
+                        <label class="flex flex-col gap-1">
+                            <span class="label-dim">Default account</span>
+                            <select class="select select-sm bg-base-100" name="default_account_id">
+                                <option value="">None</option>
+                                {% for account in accounts %}
+                                <option value="{{ account.id }}">{{ account.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </label>
+                    </div>
+                    <label class="flex flex-col gap-1">
+                        <span class="label-dim">Description</span>
+                        <textarea class="textarea textarea-sm bg-base-100" name="description" rows="2" placeholder="Optional"></textarea>
+                    </label>
+                    <div class="grid gap-3 md:grid-cols-3">
+                        <label class="flex flex-col gap-1">
+                            <span class="label-dim">Schedule</span>
+                            <select class="select select-sm bg-base-100" name="schedule_frequency">
+                                <option value="">None</option>
+                                <option value="monthly">Monthly</option>
+                            </select>
+                        </label>
+                        <label class="flex flex-col gap-1">
+                            <span class="label-dim">Due day</span>
+                            <input class="input input-sm bg-base-100 mono" type="number" min="1" max="31" name="due_day" placeholder="15">
+                        </label>
+                        <label class="flex flex-col gap-1">
+                            <span class="label-dim">Default amount</span>
+                            <input class="input input-sm bg-base-100 mono" type="number" step="0.01" name="schedule_amount" placeholder="0.00">
+                        </label>
+                    </div>
+                    <label class="flex flex-col gap-1">
+                        <span class="label-dim">Schedule start</span>
+                        <input class="input input-sm bg-base-100 mono" type="date" name="start_date">
+                    </label>
+                    <button class="emerald-pulse px-4 py-2 rounded-lg font-semibold text-sm cursor-pointer self-start" type="submit">
+                        Add Stream
+                    </button>
+                </form>
+            </div>
+        </section>
+
+        <section>
+            <div class="mb-4">
+                <h2 class="text-2xl">Views</h2>
+                <p class="label-dim mt-1">Views are merged lenses over your streams. `All Streams` is the default whole-picture view.</p>
+            </div>
+            <div class="grid gap-4 xl:grid-cols-2">
+                {% for view in views %}
+                <form class="surface-low p-4 flex flex-col gap-3"
+                      @submit.prevent="submitForm($el, '/api/views/{{ view.id }}', 'PATCH')">
+                    <div class="flex items-center justify-between gap-3">
+                        <h3 class="text-lg">{{ view.name }}</h3>
+                        {% if view.is_default == 1 %}
+                        <span class="chip-positive">Default</span>
+                        {% endif %}
+                    </div>
+                    <label class="flex flex-col gap-1">
+                        <span class="label-dim">Name</span>
+                        <input class="input input-sm bg-base-100" type="text" name="name" value="{{ view.name }}">
+                    </label>
+                    <label class="flex flex-col gap-1">
+                        <span class="label-dim">Description</span>
+                        <textarea class="textarea textarea-sm bg-base-100" name="description" rows="2">{% match view.description %}{% when Some with (description) %}{{ description }}{% when None %}{% endmatch %}</textarea>
+                    </label>
+                    <div class="grid gap-2 sm:grid-cols-2">
+                        {% for member in view.members %}
+                        <label class="flex items-center gap-2 text-sm">
+                            <input type="checkbox" class="checkbox checkbox-sm" name="stream_ids" value="{{ member.stream_id }}" {% if member.included %}checked{% endif %}>
+                            {{ member.stream_name }}
+                        </label>
+                        {% endfor %}
+                    </div>
+                    <button class="emerald-pulse px-4 py-2 rounded-lg font-semibold text-sm cursor-pointer self-start" type="submit">
+                        Save View
+                    </button>
+                </form>
+                {% endfor %}
+
+                <form class="surface-high p-4 flex flex-col gap-3"
+                      @submit.prevent="submitForm($el, '/api/views', 'POST')">
+                    <h3 class="text-lg">Add View</h3>
+                    <label class="flex flex-col gap-1">
+                        <span class="label-dim">Name</span>
+                        <input class="input input-sm bg-base-100" type="text" name="name" placeholder="Cards Only">
+                    </label>
+                    <label class="flex flex-col gap-1">
+                        <span class="label-dim">Description</span>
+                        <textarea class="textarea textarea-sm bg-base-100" name="description" rows="2" placeholder="Optional"></textarea>
+                    </label>
+                    <div class="grid gap-2 sm:grid-cols-2">
+                        {% for stream in streams %}
+                        <label class="flex items-center gap-2 text-sm">
+                            <input type="checkbox" class="checkbox checkbox-sm" name="stream_ids" value="{{ stream.id }}">
+                            {{ stream.name }}
+                        </label>
+                        {% endfor %}
+                    </div>
+                    <button class="emerald-pulse px-4 py-2 rounded-lg font-semibold text-sm cursor-pointer self-start" type="submit">
+                        Add View
+                    </button>
+                </form>
+            </div>
+        </section>
+    </div>
+</div>
+
+<script>
+function streamsManager() {
+    return {
+        async submitForm(form, url, method) {
+            const formData = new FormData(form);
+            const payload = {};
+            for (const [key, value] of formData.entries()) {
+                if (key === 'stream_ids') {
+                    if (!payload.stream_ids) payload.stream_ids = [];
+                    payload.stream_ids.push(Number(value));
+                    continue;
+                }
+                if (payload[key] !== undefined) continue;
+                payload[key] = value;
+            }
+
+            if (!formData.has('is_primary')) payload.is_primary = false;
+            else payload.is_primary = true;
+
+            ['balance', 'schedule_amount'].forEach((key) => {
+                if (payload[key] === '' || payload[key] === undefined) {
+                    payload[key] = null;
+                } else {
+                    payload[key] = Number(payload[key]);
+                }
+            });
+            ['default_account_id', 'due_day'].forEach((key) => {
+                if (payload[key] === '' || payload[key] === undefined) {
+                    payload[key] = null;
+                } else {
+                    payload[key] = Number(payload[key]);
+                }
+            });
+            ['description', 'notes', 'start_date', 'schedule_frequency', 'kind', 'name'].forEach((key) => {
+                if (payload[key] === undefined) return;
+                payload[key] = String(payload[key]).trim();
+                if (payload[key] === '') payload[key] = null;
+            });
+
+            try {
+                const res = await fetch(url, {
+                    method,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                });
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    throw new Error(err.message || 'Save failed.');
+                }
+                window.location.reload();
+            } catch (err) {
+                alert(err.message || 'Save failed.');
+            }
+        }
+    };
+}
+</script>
+{% endblock %}

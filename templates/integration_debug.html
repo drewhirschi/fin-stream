@@ -1,0 +1,230 @@
+{% extends "integration_base.html" %}
+
+{% block integration_breadcrumb_suffix %}
+<span class="label-dim">/</span>
+<span>Debug</span>
+{% endblock %}
+
+{% block integration_page_content %}
+<div class="flex flex-col gap-6">
+    <div class="card bg-base-100 shadow-sm border border-base-300">
+        <div class="card-body">
+            <h2 class="card-title">Debug Workspace</h2>
+            <p class="label-dim text-sm">Provider payloads, staging rows, and normalization traces live here so the working views can stay clean.</p>
+        </div>
+    </div>
+
+    <div class="card bg-base-100 shadow-sm border border-base-300">
+        <div class="card-body">
+            <div class="flex items-center justify-between gap-4 mb-4">
+                <div>
+                    <h2 class="card-title">Recent Syncs</h2>
+                    <p class="label-dim text-sm mt-1">Operational detail for recent runs.</p>
+                </div>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="table table-sm">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Started</th>
+                            <th>Status</th>
+                            <th>Loans</th>
+                            <th>Events</th>
+                            <th>Error</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for log in sync_logs %}
+                        <tr>
+                            <td>{{ log.id }}</td>
+                            <td>{{ log.started_at|datetime }}</td>
+                            <td>{{ log.status }}</td>
+                            <td>{{ log.loans_upserted.unwrap_or(0)|number }}</td>
+                            <td>{{ log.events_upserted.unwrap_or(0)|number }}</td>
+                            <td class="max-w-xs truncate">{{ log.error_message.as_deref().unwrap_or("-") }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    {% if connection.slug == "tmo" %}
+    <div class="card bg-base-100 shadow-sm border border-base-300">
+        <div class="card-body">
+            <div class="flex items-center justify-between gap-4 mb-4">
+                <div>
+                    <h2 class="card-title">Imported TMO Payments</h2>
+                    <p class="label-dim text-sm mt-1">Typed staging rows from TMO payment history before normalization.</p>
+                </div>
+            </div>
+            {% if tmo_import_payments.is_empty() %}
+            <div class="alert alert-info">No TMO payment imports captured yet.</div>
+            {% else %}
+            <div class="overflow-x-auto">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Loan</th>
+                            <th>Check #</th>
+                            <th>Borrower</th>
+                            <th>Property</th>
+                            <th>Amount</th>
+                            <th>Service Fee</th>
+                            <th>Interest</th>
+                            <th>Pipeline</th>
+                            <th>Payload</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for payment in tmo_import_payments %}
+                        <tr>
+                            <td class="font-mono text-xs">{{ payment.check_date|date }}</td>
+                            <td class="font-mono text-xs">{{ payment.loan_account }}</td>
+                            <td class="font-mono text-xs">{{ payment.check_number }}</td>
+                            <td>{{ payment.borrower_name }}</td>
+                            <td>{{ payment.property_name }}</td>
+                            <td>${{ payment.amount|money }}</td>
+                            <td>${{ payment.service_fee|money }}</td>
+                            <td>${{ payment.interest|money }}</td>
+                            <td>
+                                {% if payment.processing_state == "normalized" %}
+                                    <span class="badge badge-success badge-sm">Normalized</span>
+                                {% else %}
+                                    <span class="badge badge-warning badge-sm">{{ payment.processing_state }}</span>
+                                {% endif %}
+                                {% match payment.normalized_event_source_id %}
+                                    {% when Some with (normalized_ref) %}
+                                    <div class="label-dim text-xs mt-1 font-mono">{{ normalized_ref }}</div>
+                                    {% when None %}{% endmatch %}
+                            </td>
+                            <td class="w-72">
+                                <details class="collapse collapse-arrow bg-base-200">
+                                    <summary class="collapse-title text-sm py-2 min-h-0">View payload</summary>
+                                    <div class="collapse-content">
+                                        <pre class="text-xs whitespace-pre-wrap break-all">{{ payment.raw_payload.as_deref().unwrap_or("{}") }}</pre>
+                                    </div>
+                                </details>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="card bg-base-100 shadow-sm border border-base-300">
+        <div class="card-body">
+            <h2 class="card-title">Normalized Stream Events</h2>
+            <p class="label-dim text-sm mb-4">App-native events after imported TMO rows are interpreted into your lifecycle.</p>
+            {% if normalized_payments.is_empty() %}
+            <div class="alert alert-info">No normalized events yet.</div>
+            {% else %}
+            <div class="overflow-x-auto">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>State</th>
+                            <th>Loan</th>
+                            <th>Check #</th>
+                            <th>Source</th>
+                            <th>Amount</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for p in normalized_payments %}
+                        <tr>
+                            <td>
+                                {% if p.actual_date.is_some() %}
+                                    <div>{{ p.actual_date.as_deref().unwrap_or(&p.scheduled_date)|date }}</div>
+                                    <div class="label-dim text-xs">Actual date</div>
+                                {% else if p.expected_date.is_some() %}
+                                    <div>{{ p.expected_date.as_deref().unwrap_or(&p.scheduled_date)|date }}</div>
+                                    <div class="label-dim text-xs">Expected date</div>
+                                {% else %}
+                                    <div>{{ p.scheduled_date|date }}</div>
+                                    <div class="label-dim text-xs">Scheduled date</div>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if p.actual_date.is_some() %}
+                                    <span class="badge badge-success badge-sm">Actual</span>
+                                {% else if p.expected_date.is_some() %}
+                                    <span class="badge badge-warning badge-sm">Expected</span>
+                                {% else %}
+                                    <span class="badge badge-info badge-sm">Scheduled</span>
+                                {% endif %}
+                            </td>
+                            <td class="font-mono text-xs">{{ p.loan_account.as_deref().unwrap_or("—") }}</td>
+                            <td class="font-mono text-xs">{{ p.check_number.as_deref().unwrap_or("—") }}</td>
+                            <td>{{ p.label.as_deref().unwrap_or("-") }}</td>
+                            <td class="{% if p.actual_date.is_some() %}text-success{% else if p.expected_date.is_some() %}text-warning{% else %}text-info{% endif %}">
+                                ${{ p.amount|money }}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="card bg-base-100 shadow-sm border border-base-300">
+        <div class="card-body">
+            <h2 class="card-title">Captured Provider Records</h2>
+            <p class="label-dim text-sm mb-4">Other imported provider-side records for this integration.</p>
+            {% if captured_records.is_empty() %}
+            <div class="alert alert-info">No additional provider records captured yet.</div>
+            {% else %}
+            <div class="overflow-x-auto">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Entity</th>
+                            <th>Summary</th>
+                            <th>Amount</th>
+                            <th>Payload</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for record in captured_records %}
+                        <tr>
+                            <td class="font-mono text-xs">{{ record.effective_date.as_deref().unwrap_or("—")|date }}</td>
+                            <td class="font-mono text-xs">{{ record.entity_type }}</td>
+                            <td>
+                                <div>{{ record.summary.as_deref().unwrap_or(&record.external_id) }}</div>
+                                <div class="label-dim text-xs">{{ record.external_id }}</div>
+                            </td>
+                            <td>
+                                {% match record.amount %}
+                                    {% when Some with (amount) %}${{ amount|money }}
+                                    {% when None %}—
+                                {% endmatch %}
+                            </td>
+                            <td class="w-72">
+                                <details class="collapse collapse-arrow bg-base-200">
+                                    <summary class="collapse-title text-sm py-2 min-h-0">View payload</summary>
+                                    <div class="collapse-content">
+                                        <pre class="text-xs whitespace-pre-wrap break-all">{{ record.raw_payload }}</pre>
+                                    </div>
+                                </details>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -23,14 +23,13 @@ COPY --from=builder /app/templates ./templates
 COPY --from=builder /app/static ./static
 
 RUN useradd --system --uid 10001 --create-home appuser \
-    && mkdir -p /app/data \
     && chown -R appuser:appuser /app
 
 USER appuser
 
 ENV HOST=0.0.0.0
 ENV PORT=3000
-ENV DATABASE_URL=sqlite:data/income.db?mode=rwc
+ENV DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/trust_deeds
 
 EXPOSE 3000
 

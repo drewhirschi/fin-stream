@@ -30,7 +30,7 @@
                 <div>
                     <span class="opacity-60">Balance</span>
                     <div class="font-semibold">
-                        {% match loan.principal_balance %}{% when Some with (b) %}${{ "{:.0}"|format(b) }}{% when None %}—{% endmatch %}
+                        {% match loan.principal_balance %}{% when Some with (b) %}${{ b|money }}{% when None %}—{% endmatch %}
                     </div>
                 </div>
                 <div>
@@ -42,7 +42,7 @@
                 <div>
                     <span class="opacity-60">Payment</span>
                     <div class="font-semibold">
-                        {% match loan.regular_payment %}{% when Some with (p) %}${{ "{:.2}"|format(p) }}{% when None %}—{% endmatch %}
+                        {% match loan.regular_payment %}{% when Some with (p) %}${{ p|money }}{% when None %}—{% endmatch %}
                     </div>
                 </div>
                 <div>
@@ -57,11 +57,11 @@
                 </div>
                 <div>
                     <span class="opacity-60">Maturity</span>
-                    <div class="font-semibold">{{ loan.maturity_date.as_deref().unwrap_or("-") }}</div>
+                    <div class="font-semibold">{{ loan.maturity_date.as_deref().unwrap_or("-")|date }}</div>
                 </div>
                 <div>
                     <span class="opacity-60">Next Payment</span>
-                    <div class="font-semibold">{{ loan.next_payment_date.as_deref().unwrap_or("-") }}</div>
+                    <div class="font-semibold">{{ loan.next_payment_date.as_deref().unwrap_or("-")|date }}</div>
                 </div>
                 <div>
                     <span class="opacity-60">Status</span>

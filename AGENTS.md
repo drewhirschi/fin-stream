@@ -4,7 +4,7 @@ Personal income projection tool. Rust web app using the scaffold pattern from `/
 
 ## Stack
 - Rust (edition 2024) + Axum 0.8 + Tokio
-- PostgreSQL via sqlx (runtime-tokio)
+- SQLite via sqlx (runtime-tokio)
 - Askama templates (templates/ directory)
 - DaisyUI 5 + Tailwind CSS 4 (browser JIT) + HTMX 2 + Alpine.js 3
 - All frontend deps vendored in static/vendor/ (no CDN)
@@ -21,15 +21,15 @@ cargo run            # manual run, serves on PORT from .env (default 3001)
 - `src/templates/` — Askama template structs
 - `src/tmo/` — The Mortgage Office API client + sync engine
 - `src/models/` — data types (DB models, TMO API types, view models)
-- `src/db/` — PostgreSQL init, migrations, helpers
+- `src/db/` — SQLite init, migrations, helpers
 - `templates/` — HTML templates (Askama)
 - `static/` — CSS, vendored JS
-- `data/` — local data directory (optional, gitignored)
+- `data/` — SQLite database (gitignored)
 
 ## Environment
 - `TMO_ACCOUNT` and `TMO_PIN` must be set to sync from The Mortgage Office
 - `TMO_COMPANY_ID` defaults to "vci"
-- `DATABASE_URL` defaults to `postgres://postgres:postgres@127.0.0.1:5432/trust_deeds`
+- `DATABASE_URL` defaults to `sqlite:data/income.db?mode=rwc`
 
 ## Display formatting
 - Always use the shared Askama display filters in `src/filters.rs` for user-visible dates, datetimes, money, and grouped counts.

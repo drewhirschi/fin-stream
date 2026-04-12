@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="vault">
+    <div class="surface-low p-8 md:p-12 max-w-2xl">
+        <div class="label-dim mb-2">404</div>
+        <h1 class="text-3xl md:text-4xl">That page doesn’t exist.</h1>
+        <p class="mt-3" style="color: var(--vault-on-surface-variant);">
+            We couldn’t find <span class="mono">{{ path }}</span>. You can head back home or jump back to the previous page.
+        </p>
+
+        <div class="flex flex-wrap gap-3 mt-6">
+            <a href="/" class="emerald-pulse px-4 py-2 rounded-lg font-semibold text-sm" style="text-decoration: none;">
+                Go Home
+            </a>
+            <button class="px-4 py-2 rounded-lg text-sm cursor-pointer"
+                    style="background: var(--vault-surface-container-high); color: var(--vault-on-surface);"
+                    onclick="window.history.back()">
+                Go Back
+            </button>
+        </div>
+    </div>
+</div>
+{% endblock %}
