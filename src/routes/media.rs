@@ -12,10 +12,12 @@ use axum::{
 use crate::{AppState, media_storage::MediaStorage};
 
 pub fn router() -> Router<Arc<AppState>> {
-    Router::new().route("/media/loan-workspace/{*key}", get(loan_workspace_media))
+    Router::new()
+        .route("/media/loan-workspace/{*key}", get(serve_media))
+        .route("/media/emails/{*key}", get(serve_media))
 }
 
-async fn loan_workspace_media(
+async fn serve_media(
     State(_state): State<Arc<AppState>>,
     Path(key): Path<String>,
 ) -> Response {

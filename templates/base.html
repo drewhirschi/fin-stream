@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ title }}</title>
+    <link rel="icon" href="/static/favicon.ico">
     <link rel="stylesheet" href="/static/vendor/css/daisyui.css">
     <link rel="stylesheet" href="/static/vendor/css/daisyui-themes.css">
     <script src="/static/vendor/js/tailwindcss.js" type="module"></script>
@@ -15,8 +16,8 @@
     {% block head %}{% endblock %}
 </head>
 <body class="min-h-screen bg-base-200" hx-boost="true" hx-ext="preload">
-    <div class="drawer lg:drawer-open" x-data="{ open: false }">
-        <input id="drawer" type="checkbox" class="drawer-toggle" x-model="open">
+    <div class="drawer lg:drawer-open" x-data="sidebar()" x-bind="root">
+        <input id="drawer" type="checkbox" class="drawer-toggle" x-model="mobileOpen">
 
         <div class="drawer-content">
             <!-- Navbar -->
@@ -42,19 +43,50 @@
         <!-- Sidebar -->
         <div class="drawer-side">
             <label for="drawer" class="drawer-overlay"></label>
-            <aside class="app-sidebar bg-base-100 w-64 min-h-full p-4 flex flex-col">
-                <div class="text-xl font-bold mb-6 px-2" style="font-family: 'Manrope', system-ui, sans-serif;">Trust Deeds</div>
-                <ul class="menu app-nav flex-1" preload="mouseover">
-                    <li><a href="/" class="nav-link {% block nav_dashboard %}{% endblock %}" {% block nav_dashboard_attrs %}{% endblock %}>Dashboard</a></li>
-                    <li><a href="/integrations" class="nav-link {% block nav_integrations %}{% endblock %}" {% block nav_integrations_attrs %}{% endblock %}>Integrations</a></li>
-                    <li><a href="/forecast" class="nav-link {% block nav_forecast %}{% endblock %}" {% block nav_forecast_attrs %}{% endblock %}>Timeline</a></li>
-                    <li><a href="/canvas" class="nav-link {% block nav_canvas %}{% endblock %}" {% block nav_canvas_attrs %}{% endblock %}>Canvas</a></li>
-                    <li><a href="/streams" class="nav-link {% block nav_streams %}{% endblock %}" {% block nav_streams_attrs %}{% endblock %}>Streams</a></li>
-                    <li><a href="/sync" class="nav-link {% block nav_sync %}{% endblock %}" {% block nav_sync_attrs %}{% endblock %}>Sync</a></li>
+            <aside class="app-sidebar bg-base-100 min-h-full p-4 flex flex-col transition-all duration-200"
+                   :class="collapsed ? 'w-16 items-center px-2' : 'w-64'">
+                <!-- Header -->
+                <div class="flex items-center mb-6" :class="collapsed ? 'justify-center' : 'justify-between px-2'">
+                    <span x-show="!collapsed" class="text-xl font-bold" style="font-family: 'Manrope', system-ui, sans-serif;">Trust Deeds</span>
+                    <button @click="toggle()" class="btn btn-ghost btn-square btn-sm hidden lg:flex">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 transition-transform duration-200" :class="collapsed && 'rotate-180'" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
+                        </svg>
+                    </button>
+                </div>
+                <ul class="menu app-nav flex-1" :class="collapsed && 'w-full px-0'" preload="mouseover">
+                    <li><a href="/" class="nav-link {% block nav_dashboard %}{% endblock %}" {% block nav_dashboard_attrs %}{% endblock %} :class="collapsed && 'justify-center px-0'" :title="collapsed ? 'Dashboard' : ''">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" x-show="collapsed" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0h4"/></svg>
+                        <span x-show="!collapsed">Dashboard</span>
+                    </a></li>
+                    <li><a href="/integrations" class="nav-link {% block nav_integrations %}{% endblock %}" {% block nav_integrations_attrs %}{% endblock %} :class="collapsed && 'justify-center px-0'" :title="collapsed ? 'Integrations' : ''">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" x-show="collapsed" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                        <span x-show="!collapsed">Integrations</span>
+                    </a></li>
+                    <li><a href="/inbox" class="nav-link {% block nav_inbox %}{% endblock %}" {% block nav_inbox_attrs %}{% endblock %} :class="collapsed && 'justify-center px-0'" :title="collapsed ? 'Inbox' : ''">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" x-show="collapsed" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+                        <span x-show="!collapsed">Inbox</span>
+                    </a></li>
+                    <li><a href="/forecast" class="nav-link {% block nav_forecast %}{% endblock %}" {% block nav_forecast_attrs %}{% endblock %} :class="collapsed && 'justify-center px-0'" :title="collapsed ? 'Timeline' : ''">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" x-show="collapsed" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                        <span x-show="!collapsed">Timeline</span>
+                    </a></li>
+                    <li><a href="/canvas" class="nav-link {% block nav_canvas %}{% endblock %}" {% block nav_canvas_attrs %}{% endblock %} :class="collapsed && 'justify-center px-0'" :title="collapsed ? 'Canvas' : ''">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" x-show="collapsed" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1V5zm10 0a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1v-4zm10 0a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z"/></svg>
+                        <span x-show="!collapsed">Canvas</span>
+                    </a></li>
+                    <li><a href="/streams" class="nav-link {% block nav_streams %}{% endblock %}" {% block nav_streams_attrs %}{% endblock %} :class="collapsed && 'justify-center px-0'" :title="collapsed ? 'Streams' : ''">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" x-show="collapsed" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.3"/></svg>
+                        <span x-show="!collapsed">Streams</span>
+                    </a></li>
+                    <li><a href="/sync" class="nav-link {% block nav_sync %}{% endblock %}" {% block nav_sync_attrs %}{% endblock %} :class="collapsed && 'justify-center px-0'" :title="collapsed ? 'Sync' : ''">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" x-show="collapsed" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                        <span x-show="!collapsed">Sync</span>
+                    </a></li>
                 </ul>
 
                 <!-- Answer Badge: cash position at next big expense -->
-                <div x-data="answerBadge()" x-init="refresh()" class="mt-auto p-3 rounded-xl" style="background: #191c1f;">
+                <div x-show="!collapsed" x-data="answerBadge()" x-init="refresh()" class="mt-auto p-3 rounded-xl" style="background: #191c1f;">
                     <template x-if="loaded && targetDate">
                         <a href="/forecast" class="block no-underline">
                             <div style="font-size: 0.625rem; color: #86948a; text-transform: uppercase; letter-spacing: 0.05em;">Cash on</div>
@@ -101,6 +133,20 @@
 
     document.addEventListener('DOMContentLoaded', () => wirePreloadTargets());
     document.body.addEventListener('htmx:load', (event) => wirePreloadTargets(event.target));
+
+    function sidebar() {
+        return {
+            mobileOpen: false,
+            collapsed: localStorage.getItem('sidebar_collapsed') === 'true',
+            root: {
+                ':class'() { return this.collapsed ? 'sidebar-collapsed' : ''; }
+            },
+            toggle() {
+                this.collapsed = !this.collapsed;
+                localStorage.setItem('sidebar_collapsed', this.collapsed);
+            }
+        };
+    }
 
     function answerBadge() {
         // Threshold: show cash at the date of the next expense over this amount

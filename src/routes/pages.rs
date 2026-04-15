@@ -43,6 +43,10 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/streams", get(streams))
         .route("/forecast", get(forecast))
         .route("/canvas", get(canvas))
+        .route("/inbox", get(inbox))
+        .route("/inbox/{email_id}", get(inbox_email_detail))
+        .route("/inbox/{email_id}/link", post(link_email_to_loan))
+        .route("/inbox/{email_id}/unlink", post(unlink_email_from_loan))
 }
 
 #[derive(Deserialize, Default)]
@@ -690,6 +694,77 @@ async fn canvas(State(state): State<Arc<AppState>>) -> templates::CanvasTemplate
         streams,
         default_stream_id,
     }
+}
+
+#[derive(Deserialize, Default)]
+struct LinkEmailForm {
+    loan_account: String,
+}
+
+async fn inbox(State(state): State<Arc<AppState>>) -> templates::InboxTemplate {
+    let emails = db::emails::list_unlinked_emails(&state.db).await;
+    let loans = db::loans::get_active_loans(&state.db).await;
+
+    templates::InboxTemplate {
+        title: "Trust Deeds - Inbox".into(),
+        emails,
+        loans,
+    }
+}
+
+async fn inbox_email_detail(
+    State(state): State<Arc<AppState>>,
+    Path(email_id): Path<i64>,
+) -> axum::response::Response {
+    let Some(email) = db::emails::get_email_by_id(&state.db, email_id).await else {
+        return templates::NotFoundTemplate {
+            title: "Trust Deeds - Not Found".into(),
+            path: format!("/inbox/{email_id}"),
+        }
+        .into_response();
+    };
+    let attachments = db::emails::list_attachments_for_email(&state.db, email_id).await;
+    let loans = db::loans::get_active_loans(&state.db).await;
+
+    templates::InboxEmailDetailTemplate {
+        title: format!(
+            "Trust Deeds - {}",
+            email.subject.as_deref().unwrap_or("(no subject)")
+        ),
+        email,
+        attachments,
+        loans,
+    }
+    .into_response()
+}
+
+async fn link_email_to_loan(
+    State(state): State<Arc<AppState>>,
+    Path(email_id): Path<i64>,
+    Form(form): Form<LinkEmailForm>,
+) -> axum::response::Response {
+    if form.loan_account.is_empty() {
+        return Redirect::to("/inbox").into_response();
+    }
+
+    if let Err(e) =
+        db::emails::link_email_to_loan(&state.db, email_id, &form.loan_account).await
+    {
+        tracing::error!("failed to link email {email_id}: {e}");
+    }
+
+    Redirect::to("/inbox").into_response()
+}
+
+async fn unlink_email_from_loan(
+    State(state): State<Arc<AppState>>,
+    Path(email_id): Path<i64>,
+) -> axum::response::Response {
+    if let Err(e) = db::emails::unlink_email(&state.db, email_id).await {
+        tracing::error!("failed to unlink email {email_id}: {e}");
+    }
+
+    Redirect::to("/inbox").into_response()
 }
 
 pub async fn not_found(uri: Uri) -> templates::NotFoundTemplate {

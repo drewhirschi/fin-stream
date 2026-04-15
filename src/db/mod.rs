@@ -1,9 +1,11 @@
 pub mod accounts;
+pub mod emails;
 pub mod events;
 pub mod forecasts;
 pub mod integrations;
 pub mod loans;
 pub mod streams;
+pub mod users;
 pub mod workspaces;
 
 use sqlx::postgres::{PgPool, PgPoolOptions};
@@ -732,6 +734,114 @@ async fn run_migrations(pool: &PgPool) -> anyhow::Result<()> {
     )
     .execute(pool)
     .await?;
+
+    // -- Received emails (Resend inbound) --
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS intg.received_email (
+            id                BIGSERIAL PRIMARY KEY,
+            resend_email_id   TEXT NOT NULL UNIQUE,
+            from_address      TEXT NOT NULL,
+            to_addresses      TEXT NOT NULL,
+            subject           TEXT,
+            received_at       TEXT NOT NULL,
+            body_s3_key       TEXT,
+            body_content_type TEXT,
+            loan_account      TEXT,
+            processing_state  TEXT NOT NULL DEFAULT 'pending',
+            error_message     TEXT,
+            raw_webhook_payload TEXT,
+            created_at        TEXT NOT NULL DEFAULT TO_CHAR(NOW() AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"'),
+            updated_at        TEXT NOT NULL DEFAULT TO_CHAR(NOW() AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"')
+        )",
+    )
+    .execute(pool)
+    .await?;
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS intg.received_email_attachment (
+            id                   BIGSERIAL PRIMARY KEY,
+            email_id             BIGINT NOT NULL REFERENCES intg.received_email(id) ON DELETE CASCADE,
+            resend_attachment_id TEXT NOT NULL,
+            filename             TEXT NOT NULL,
+            content_type         TEXT NOT NULL,
+            size_bytes           INTEGER,
+            s3_key               TEXT,
+            processing_state     TEXT NOT NULL DEFAULT 'pending',
+            created_at           TEXT NOT NULL DEFAULT TO_CHAR(NOW() AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"'),
+            UNIQUE(email_id, resend_attachment_id)
+        )",
+    )
+    .execute(pool)
+    .await?;
+    sqlx::query(
+        "CREATE INDEX IF NOT EXISTS idx_received_email_loan ON intg.received_email(loan_account) WHERE loan_account IS NOT NULL",
+    )
+    .execute(pool)
+    .await?;
+    sqlx::query(
+        "CREATE INDEX IF NOT EXISTS idx_received_email_unlinked ON intg.received_email(created_at DESC) WHERE loan_account IS NULL",
+    )
+    .execute(pool)
+    .await?;
+    sqlx::query(
+        "CREATE INDEX IF NOT EXISTS idx_received_email_attachment_email ON intg.received_email_attachment(email_id)",
+    )
+    .execute(pool)
+    .await?;
+
+    // -- Application users (session auth) --
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS app_user (
+            id            BIGSERIAL PRIMARY KEY,
+            email         TEXT    NOT NULL UNIQUE,
+            password_hash TEXT    NOT NULL,
+            display_name  TEXT,
+            is_active     INTEGER NOT NULL DEFAULT 1,
+            created_at    TEXT    NOT NULL DEFAULT TO_CHAR(NOW() AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"'),
+            updated_at    TEXT    NOT NULL DEFAULT TO_CHAR(NOW() AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"')
+        )",
+    )
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+/// Seed an initial admin user from ADMIN_EMAIL + ADMIN_PASSWORD env vars if no
+/// users exist yet. Idempotent: skips if the email already has a row.
+pub async fn ensure_admin_user(pool: &PgPool) -> anyhow::Result<()> {
+    let existing: Option<(i64,)> = sqlx::query_as("SELECT COUNT(*)::BIGINT FROM app_user")
+        .fetch_optional(pool)
+        .await?;
+
+    let count = existing.map(|(n,)| n).unwrap_or(0);
+
+    match (config::admin_email(), config::admin_password()) {
+        (Some(email), Some(password)) => {
+            let hash = crate::auth::hash_password(&password)?;
+            let inserted: Option<(i64,)> = sqlx::query_as(
+                "INSERT INTO app_user (email, password_hash, display_name)
+                 VALUES ($1, $2, 'Admin')
+                 ON CONFLICT (email) DO NOTHING
+                 RETURNING id",
+            )
+            .bind(&email)
+            .bind(&hash)
+            .fetch_optional(pool)
+            .await?;
+
+            if inserted.is_some() {
+                tracing::info!("seeded admin user {email}");
+            }
+        }
+        _ => {
+            if count == 0 {
+                tracing::warn!(
+                    "no users exist and ADMIN_EMAIL/ADMIN_PASSWORD not set — no one can log in. \
+                     Set these env vars and restart to create the initial user."
+                );
+            }
+        }
+    }
 
     Ok(())
 }

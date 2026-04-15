@@ -1,15 +1,19 @@
-# trust-deeds
+# Trust Deeds
 
-To install dependencies:
+Personal income projection tool.
 
-```bash
-bun install
-```
+## Development
 
-To run:
+Install [cargo-watch](https://crates.io/crates/cargo-watch) for hot reload:
 
 ```bash
-bun run index.ts
+cargo install cargo-watch
 ```
 
-This project was created using `bun init` in bun v1.3.10. [Bun](https://bun.com) is a fast all-in-one JavaScript runtime.
+Then run:
+
+```bash
+cargo watch -x run
+```
+
+The app serves on the port defined in `.env` (default 3001).

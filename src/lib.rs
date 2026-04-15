@@ -1,3 +1,4 @@
+pub mod auth;
 pub mod config;
 pub mod crypto;
 pub mod db;
@@ -6,7 +7,9 @@ pub mod media_storage;
 pub mod models;
 pub mod monarch;
 pub mod property_media;
+pub mod resend;
 pub mod routes;
+pub mod scheduler;
 pub mod templates;
 pub mod tmo;
 

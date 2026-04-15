@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+
+{% block nav_inbox %}active menu-active{% endblock %}
+{% block nav_inbox_attrs %}aria-current="page"{% endblock %}
+
+{% block content %}
+<div class="vault">
+    <div class="flex flex-col gap-6">
+        <!-- Breadcrumb -->
+        <div class="text-sm breadcrumbs">
+            <ul>
+                <li><a href="/inbox">Inbox</a></li>
+                <li>{% match email.subject %}{% when Some with (s) %}{{ s }}{% when None %}(no subject){% endmatch %}</li>
+            </ul>
+        </div>
+
+        <!-- Email metadata -->
+        <div class="card bg-base-100 shadow-sm border border-base-300">
+            <div class="card-body">
+                <div class="flex items-start justify-between">
+                    <div>
+                        <h2 class="card-title">{% match email.subject %}{% when Some with (s) %}{{ s }}{% when None %}(no subject){% endmatch %}</h2>
+                        <div class="mt-2 space-y-1 text-sm">
+                            <p><span class="label-dim">From:</span> {{ email.from_address }}</p>
+                            <p><span class="label-dim">To:</span> {{ email.to_addresses }}</p>
+                            <p><span class="label-dim">Received:</span> {{ email.received_at|datetime }}</p>
+                            <p>
+                                <span class="label-dim">Status:</span>
+                                {% if email.processing_state == "stored" %}
+                                <span class="badge badge-success badge-sm">Stored</span>
+                                {% else if email.processing_state == "error" %}
+                                <span class="badge badge-error badge-sm">Error</span>
+                                {% if email.error_message.is_some() %}
+                                <span class="text-error text-xs ml-1">{{ email.error_message.as_deref().unwrap_or_default() }}</span>
+                                {% endif %}
+                                {% else %}
+                                <span class="badge badge-warning badge-sm">Pending</span>
+                                {% endif %}
+                            </p>
+                            {% match email.loan_account %}
+                            {% when Some with (la) %}
+                            <p>
+                                <span class="label-dim">Linked to:</span>
+                                <span class="font-mono text-xs">{{ la }}</span>
+                                <form method="post" action="/inbox/{{ email.id }}/unlink" class="inline ml-2">
+                                    <button type="submit" class="btn btn-xs btn-ghost text-error">Unlink</button>
+                                </form>
+                            </p>
+                            {% when None %}
+                            <div class="mt-3">
+                                <span class="label-dim">Link to loan:</span>
+                                {% if !loans.is_empty() %}
+                                <form method="post" action="/inbox/{{ email.id }}/link" class="inline-flex items-center gap-2 ml-2">
+                                    <select name="loan_account" class="select select-bordered select-xs w-48">
+                                        <option value="">Select loan...</option>
+                                        {% for loan in loans %}
+                                        <option value="{{ loan.loan_account }}">{{ loan.loan_account }} - {% match loan.borrower_name %}{% when Some with (n) %}{{ n }}{% when None %}?{% endmatch %}</option>
+                                        {% endfor %}
+                                    </select>
+                                    <button type="submit" class="btn btn-xs btn-outline">Link</button>
+                                </form>
+                                {% else %}
+                                <span class="text-sm label-dim">No loans available</span>
+                                {% endif %}
+                            </div>
+                            {% endmatch %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Email body -->
+        {% if email.body_s3_key.is_some() && !email.body_s3_key.as_deref().unwrap_or_default().is_empty() %}
+        <div class="card bg-base-100 shadow-sm border border-base-300">
+            <div class="card-body">
+                <h3 class="card-title text-lg">Body</h3>
+                <iframe
+                    src="/media/emails/{{ email.body_s3_key.as_deref().unwrap_or_default() }}"
+                    class="w-full min-h-96 rounded border border-base-300 bg-white"
+                    sandbox="allow-same-origin"
+                    loading="lazy">
+                </iframe>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Attachments -->
+        {% if !attachments.is_empty() %}
+        <div class="card bg-base-100 shadow-sm border border-base-300">
+            <div class="card-body">
+                <h3 class="card-title text-lg">Attachments</h3>
+                <div class="overflow-x-auto">
+                    <table class="table bg-base-100">
+                        <thead>
+                            <tr>
+                                <th>Filename</th>
+                                <th>Type</th>
+                                <th>Size</th>
+                                <th>Status</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for att in attachments %}
+                            <tr>
+                                <td class="font-mono text-sm">{{ att.filename }}</td>
+                                <td class="text-sm">{{ att.content_type }}</td>
+                                <td class="text-sm">
+                                    {% match att.size_bytes %}
+                                        {% when Some with (s) %}{{ s|number }} bytes
+                                        {% when None %}—
+                                    {% endmatch %}
+                                </td>
+                                <td>
+                                    {% if att.processing_state == "stored" %}
+                                    <span class="badge badge-success badge-sm">Stored</span>
+                                    {% else %}
+                                    <span class="badge badge-warning badge-sm">{{ att.processing_state }}</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% match att.s3_key %}
+                                    {% when Some with (key) %}
+                                    <a href="/media/emails/{{ key }}" class="btn btn-xs btn-ghost" target="_blank" download="{{ att.filename }}">Download</a>
+                                    {% when None %}
+                                    {% endmatch %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

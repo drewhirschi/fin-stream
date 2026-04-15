@@ -382,6 +382,34 @@ pub struct TmoImportPaymentView {
     pub updated_at: String,
 }
 
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct ReceivedEmailView {
+    pub id: i64,
+    pub resend_email_id: String,
+    pub from_address: String,
+    pub to_addresses: String,
+    pub subject: Option<String>,
+    pub received_at: String,
+    pub body_s3_key: Option<String>,
+    pub body_content_type: Option<String>,
+    pub loan_account: Option<String>,
+    pub processing_state: String,
+    pub error_message: Option<String>,
+    pub attachment_count: i64,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct ReceivedEmailAttachmentView {
+    pub id: i64,
+    pub resend_attachment_id: String,
+    pub filename: String,
+    pub content_type: String,
+    pub size_bytes: Option<i32>,
+    pub s3_key: Option<String>,
+    pub processing_state: String,
+}
+
 #[derive(Debug, Clone)]
 pub struct TmoCredential {
     pub company_id: String,

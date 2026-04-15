@@ -138,6 +138,23 @@ pub struct CanvasTemplate {
 }
 
 #[derive(Template)]
+#[template(path = "inbox.html")]
+pub struct InboxTemplate {
+    pub title: String,
+    pub emails: Vec<ReceivedEmailView>,
+    pub loans: Vec<LoanView>,
+}
+
+#[derive(Template)]
+#[template(path = "inbox_email_detail.html")]
+pub struct InboxEmailDetailTemplate {
+    pub title: String,
+    pub email: ReceivedEmailView,
+    pub attachments: Vec<ReceivedEmailAttachmentView>,
+    pub loans: Vec<LoanView>,
+}
+
+#[derive(Template)]
 #[template(path = "404.html")]
 pub struct NotFoundTemplate {
     pub title: String,
@@ -148,6 +165,13 @@ pub struct NotFoundTemplate {
 #[template(path = "sync_logs_partial.html")]
 pub struct SyncLogsPartialTemplate {
     pub logs: Vec<SyncLog>,
+}
+
+#[derive(Template)]
+#[template(path = "login.html")]
+pub struct LoginTemplate {
+    pub title: String,
+    pub error: Option<String>,
 }
 
 // Implement IntoResponse for all templates
@@ -187,7 +211,10 @@ impl_into_response!(
     ForecastTemplate,
     StreamsTemplate,
     CanvasTemplate,
-    SyncLogsPartialTemplate
+    SyncLogsPartialTemplate,
+    InboxTemplate,
+    InboxEmailDetailTemplate,
+    LoginTemplate
 );
 
 impl IntoResponse for NotFoundTemplate {

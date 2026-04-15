@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }} · Trust Deeds</title>
+    <link rel="icon" href="/static/favicon.ico">
+    <link rel="stylesheet" href="/static/vendor/css/daisyui.css">
+    <link rel="stylesheet" href="/static/vendor/css/daisyui-themes.css">
+    <script src="/static/vendor/js/tailwindcss.js" type="module"></script>
+    <link rel="stylesheet" href="/static/vault.css">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="vault min-h-screen flex items-center justify-center p-4" style="background-color: var(--vault-surface);">
+    <div class="surface-low shadow-ambient w-full max-w-sm p-8" style="color: var(--vault-on-surface);">
+        <div class="mb-6 text-center">
+            <div class="text-2xl font-bold" style="font-family: 'Manrope', system-ui, sans-serif;">Trust Deeds</div>
+            <div class="text-sm mt-1" style="color: var(--vault-on-surface-variant);">Sign in to continue</div>
+        </div>
+
+        {% if let Some(message) = error %}
+        <div class="mb-4 p-3 rounded-lg text-sm" style="background-color: var(--vault-secondary-container); color: var(--vault-on-secondary-container);">
+            {{ message }}
+        </div>
+        {% endif %}
+
+        <form method="POST" action="/login" class="flex flex-col gap-4">
+            <label class="flex flex-col gap-1">
+                <span class="text-xs uppercase tracking-wide" style="color: var(--vault-on-surface-variant);">Email</span>
+                <input
+                    type="email"
+                    name="email"
+                    autocomplete="username"
+                    required
+                    autofocus
+                    class="input input-bordered w-full"
+                    style="background-color: var(--vault-surface-container); color: var(--vault-on-surface); border: none;">
+            </label>
+            <label class="flex flex-col gap-1">
+                <span class="text-xs uppercase tracking-wide" style="color: var(--vault-on-surface-variant);">Password</span>
+                <input
+                    type="password"
+                    name="password"
+                    autocomplete="current-password"
+                    required
+                    class="input input-bordered w-full"
+                    style="background-color: var(--vault-surface-container); color: var(--vault-on-surface); border: none;">
+            </label>
+            <button type="submit" class="emerald-pulse btn border-none mt-2 font-semibold">
+                Sign in
+            </button>
+        </form>
+    </div>
+</body>
+</html>

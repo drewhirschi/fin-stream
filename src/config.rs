@@ -44,6 +44,18 @@ pub fn app_encryption_key() -> String {
     })
 }
 
+pub fn admin_email() -> Option<String> {
+    env::var("ADMIN_EMAIL")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+}
+
+pub fn admin_password() -> Option<String> {
+    env::var("ADMIN_PASSWORD")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+}
+
 pub fn loan_image_storage_dir() -> PathBuf {
     env::var("LOAN_IMAGE_STORAGE_DIR")
         .map(PathBuf::from)
@@ -52,6 +64,18 @@ pub fn loan_image_storage_dir() -> PathBuf {
 
 pub fn loan_image_base_url() -> String {
     env::var("LOAN_IMAGE_BASE_URL").unwrap_or_else(|_| "/static/loan-images".into())
+}
+
+pub fn resend_api_key() -> Option<String> {
+    env::var("RESEND_API_KEY")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+}
+
+pub fn resend_webhook_secret() -> Option<String> {
+    env::var("RESEND_WEBHOOK_SECRET")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
 }
 
 pub fn s3_endpoint() -> Option<String> {

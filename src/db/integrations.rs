@@ -637,6 +637,17 @@ pub async fn get_connection_by_slug(
     .flatten()
 }
 
+pub async fn list_scheduled_connections(pool: &PgPool) -> Vec<(String, String)> {
+    sqlx::query_as(
+        "SELECT slug, sync_cadence
+         FROM intg.integration_connection
+         WHERE sync_cadence <> 'manual' AND sync_cadence <> ''",
+    )
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default()
+}
+
 pub async fn update_sync_cadence(
     pool: &PgPool,
     slug: &str,

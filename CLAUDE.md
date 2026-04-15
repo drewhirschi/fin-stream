@@ -31,6 +31,22 @@ cargo run            # manual run, serves on PORT from .env (default 3001)
 - `TMO_COMPANY_ID` defaults to "vci"
 - `DATABASE_URL` defaults to `postgres://postgres:postgres@127.0.0.1:5432/trust_deeds`
 
+## Deployment (gory)
+
+The app is deployed to a home server named `gory` running Coolify. **Everything stays behind Tailscale** — no ports are forwarded on the home router.
+
+- **Access paths**:
+  - `gory` (Tailscale MagicDNS, IP `100.82.34.75`) — remote access via VPN
+  - `gory.local` (mDNS on LAN, IPs `192.168.4.x`) — local access on home network
+- **Coolify dashboard**: hosted on port 80 via Traefik host-based routing. Just type `gory` in a browser.
+- **Trust Deeds app**: Tailscale-only hostname via Coolify's Traefik. No public DNS.
+- **Public exposure**: ONLY the webhook endpoint (`webhooks.<domain>/webhooks/resend`) via a **Cloudflare Tunnel**. See `docs/plans/session-auth.md`.
+- **Coolify API**: `http://gory:8000`, token in `gory_coolify_access_token.txt` (gitignored). The `Makefile` has `make deploy/logs/status/stats/envs/build/ship` targets.
+- **Container image**: `ghcr.io/drewhirschi/fin-stream:latest`, built multi-arch (amd64 + arm64) via `make build`, then `make deploy` tells Coolify to re-pull and redeploy.
+- **App auth**: session-based password auth (Argon2id + `tower-sessions` + Postgres store). See `docs/plans/session-auth.md`. Webhook and health routes are public; everything else requires login.
+
+Do NOT propose architectures that expose the dashboard or the app to the public internet directly. Public exposure is opt-in per route via Cloudflare Tunnel only.
+
 ## Display formatting
 - Always use the shared Askama display filters in `src/filters.rs` for user-visible dates, datetimes, money, and grouped counts.
 - Do not render raw ISO dates like `YYYY-MM-DD` in templates unless the user explicitly asks for that format.
