@@ -37,11 +37,59 @@ pub fn monarch_account_id() -> String {
     env::var("MONARCH_ACCOUNT_ID").unwrap_or_else(|_| "217902882668946592".into())
 }
 
+/// Returns the app encryption key used to derive the AES-256-GCM key for
+/// at-rest secrets (TMO PIN, Monarch token).
+///
+/// Behavior:
+/// - If `APP_ENCRYPTION_KEY` is set to a non-empty value, use it.
+/// - Otherwise, in debug builds (or when `APP_ENV=dev`), fall back to a
+///   well-known development key so local iteration doesn't require env setup.
+/// - In release builds without the env var, panic loudly. Silently switching
+///   to a dev key in production causes "failed to decrypt secret" the next
+///   time the real key is provided and we try to read rows bootstrapped with
+///   the dev key.
 pub fn app_encryption_key() -> String {
-    env::var("APP_ENCRYPTION_KEY").unwrap_or_else(|_| {
-        tracing::warn!("APP_ENCRYPTION_KEY not set; using development fallback key");
-        "trust-deeds-dev-only-encryption-key".into()
-    })
+    if let Ok(value) = env::var("APP_ENCRYPTION_KEY") {
+        let trimmed = value.trim();
+        if !trimmed.is_empty() {
+            return trimmed.to_string();
+        }
+    }
+
+    let allow_dev_fallback = cfg!(debug_assertions)
+        || env::var("APP_ENV")
+            .ok()
+            .map(|v| {
+                let v = v.trim().to_ascii_lowercase();
+                v == "dev" || v == "development" || v == "test"
+            })
+            .unwrap_or(false);
+
+    if allow_dev_fallback {
+        tracing::warn!(
+            "APP_ENCRYPTION_KEY not set; using development fallback key (debug/dev build only)"
+        );
+        return "trust-deeds-dev-only-encryption-key".into();
+    }
+
+    // Release build with no explicit key: refuse to boot. Exiting here is
+    // preferable to silently falling back and corrupting the credential table.
+    panic!(
+        "APP_ENCRYPTION_KEY must be set in release builds. Refusing to boot with the development \
+         fallback key. Set APP_ENCRYPTION_KEY in the deployment environment (e.g. Coolify env \
+         vars) and restart. If you intentionally want the dev fallback on this host, set \
+         APP_ENV=dev."
+    );
+}
+
+/// Return a short, non-reversible fingerprint of the current encryption key
+/// for log diffing. First 8 hex chars of SHA-256(key). Safe to log.
+pub fn app_encryption_key_fingerprint() -> String {
+    use sha2::{Digest, Sha256};
+    let key = app_encryption_key();
+    let digest = Sha256::digest(key.as_bytes());
+    let hex: String = digest.iter().take(4).map(|b| format!("{:02x}", b)).collect();
+    hex
 }
 
 pub fn admin_email() -> Option<String> {

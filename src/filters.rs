@@ -104,6 +104,47 @@ pub fn datetime(value: impl AsRef<str>, _: &dyn Values) -> Result<String> {
     Ok(format_date_value(value))
 }
 
+/// Emit a `<time>` element that a small vanilla JS helper in
+/// `static/js/local-time.js` upgrades to the viewer's local timezone at
+/// DOMContentLoaded and on `htmx:afterSwap`. When JS is off, falls back to
+/// the same US `MM-DD-YYYY hh:mm AM/PM` format as `datetime`, with a "UTC"
+/// suffix so the viewer knows the timestamp is UTC-not-local.
+///
+/// Input must be a parseable RFC3339 timestamp. Non-parseable values pass
+/// through as plain text (matching `datetime`'s defensive behavior).
+#[askama::filter_fn]
+pub fn datetime_local(value: impl AsRef<str>, _: &dyn Values) -> Result<String> {
+    let raw = value.as_ref().trim();
+    if raw.is_empty() || raw == "—" || raw == "-" {
+        return Ok(raw.to_string());
+    }
+
+    let parsed = match DateTime::parse_from_rfc3339(raw) {
+        Ok(p) => p,
+        Err(_) => {
+            // Not RFC3339 — try the other shapes `datetime` accepts, then
+            // fall through to raw text so we don't blow up a page.
+            if let Ok(p) = NaiveDateTime::parse_from_str(raw, "%Y-%m-%dT%H:%M:%S") {
+                return Ok(p.format("%m-%d-%Y %I:%M %p").to_string());
+            }
+            if let Ok(p) = NaiveDateTime::parse_from_str(raw, "%Y-%m-%d %H:%M:%S") {
+                return Ok(p.format("%m-%d-%Y %I:%M %p").to_string());
+            }
+            return Ok(format_date_value(raw));
+        }
+    };
+
+    let utc_fallback = parsed.format("%m-%d-%Y %I:%M %p").to_string();
+    // Use the original RFC3339 string so the JS enhancer can parse with
+    // timezone info. Escape nothing — our inputs are from the DB and are
+    // already well-formed.
+    Ok(format!(
+        "<time class=\"local-time\" data-local=\"{iso}\" datetime=\"{iso}\">{fallback} UTC</time>",
+        iso = raw,
+        fallback = utc_fallback
+    ))
+}
+
 fn parse_date(value: &str) -> Option<NaiveDate> {
     NaiveDate::parse_from_str(value, "%Y-%m-%d")
         .ok()

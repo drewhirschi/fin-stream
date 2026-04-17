@@ -49,7 +49,10 @@
                 </div>
                 <div class="text-sm">
                     <span class="label-dim">Last synced:</span>
-                    {{ connection.last_synced_at.as_deref().unwrap_or("Never")|datetime }}
+                    {% match connection.last_synced_at %}
+                        {% when Some with (ts) %}{{ ts|datetime_local|safe }}
+                        {% when None %}Never
+                    {% endmatch %}
                 </div>
                 <div class="pt-2 text-sm text-primary font-medium">
                     Open integration

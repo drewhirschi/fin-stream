@@ -1,8 +1,8 @@
 {% for log in logs %}
 <tr>
     <td>{{ log.id|number }}</td>
-    <td>{{ log.started_at|datetime }}</td>
-    <td>{% match log.finished_at %}{% when Some with (f) %}{{ f|datetime }}{% when None %}-{% endmatch %}</td>
+    <td>{{ log.started_at|datetime_local|safe }}</td>
+    <td>{% match log.finished_at %}{% when Some with (f) %}{{ f|datetime_local|safe }}{% when None %}-{% endmatch %}</td>
     <td>
         {% if log.status == "success" %}
         <span class="badge badge-success badge-sm">{{ log.status }}</span>

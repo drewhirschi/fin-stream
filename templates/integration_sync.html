@@ -7,30 +7,28 @@
 
 {% block integration_page_content %}
 <div class="grid grid-cols-1 xl:grid-cols-[20rem_minmax(0,1fr)] gap-6">
-    <div class="card bg-base-100 shadow-sm border border-base-300"
-         x-data="{ cron: '{{ connection.sync_cadence|escape }}' }">
+    <div class="card bg-base-100 shadow-sm border border-base-300">
         <div class="card-body">
             <h2 class="card-title text-lg">Sync Settings</h2>
-            <p class="label-dim text-sm">Save a cron expression for this integration. The shortcuts just fill in a cron for you so we keep one consistent format.</p>
+            <p class="label-dim text-sm">Pick how often this integration should sync. All times are UTC.</p>
             <form class="space-y-4"
                   hx-post="/integrations/{{ connection.slug }}/sync/cadence"
                   hx-target="#sync-cadence-feedback"
                   hx-swap="innerHTML">
                 <label class="form-control w-full">
-                    <span class="label-text mb-2">Cron expression</span>
-                    <input class="input input-bordered w-full font-mono text-sm"
-                           type="text"
-                           name="sync_cadence"
-                           x-model="cron"
-                           placeholder="0 * * * *">
+                    <span class="label-text mb-2">Cadence</span>
+                    <select class="select select-bordered w-full" name="sync_cadence">
+                        <option value="manual" {% if connection.sync_cadence == "manual" || connection.sync_cadence == "" %}selected{% endif %}>Manual only</option>
+                        <option value="hourly" {% if connection.sync_cadence == "hourly" %}selected{% endif %}>Hourly (on the :00)</option>
+                        <option value="every_6h" {% if connection.sync_cadence == "every_6h" %}selected{% endif %}>Every 6 hours (00/06/12/18 UTC)</option>
+                        <option value="every_12h" {% if connection.sync_cadence == "every_12h" %}selected{% endif %}>Every 12 hours (00/12 UTC)</option>
+                        <option value="daily" {% if connection.sync_cadence == "daily" %}selected{% endif %}>Daily (06:00 UTC)</option>
+                    </select>
                 </label>
-                <div class="flex flex-wrap gap-2">
-                    <button type="button" class="btn btn-xs btn-ghost" @click="cron = ''">Clear</button>
-                    <button type="button" class="btn btn-xs btn-ghost" @click="cron = '0 * * * *'">Hourly</button>
-                    <button type="button" class="btn btn-xs btn-ghost" @click="cron = '0 6 * * *'">Daily 6am</button>
-                    <button type="button" class="btn btn-xs btn-ghost" @click="cron = '0 6 * * 1'">Weekly Mon 6am</button>
-                </div>
-                <p class="label-dim text-xs">Examples: <span class="font-mono">0 * * * *</span>, <span class="font-mono">30 7 * * 1-5</span>, <span class="font-mono">0 9 * * 1</span>.</p>
+                {% match connection.next_scheduled_at %}
+                {% when Some with (next) %}
+                <p class="label-dim text-xs">Next scheduled run: {{ next|datetime_local|safe }}</p>
+                {% when None %}{% endmatch %}
                 <button type="submit" class="btn btn-sm btn-outline">Save cadence</button>
             </form>
             <div id="sync-cadence-feedback" class="min-h-6"></div>
@@ -45,6 +43,23 @@
                  hx-get="/integrations/{{ connection.slug }}/sync/status"
                  hx-trigger="load"
                  hx-swap="innerHTML"></div>
+            {% if connection.slug == "tmo" %}
+            <div class="divider my-2"></div>
+            <details class="text-sm">
+                <summary class="cursor-pointer label-dim">Recovery</summary>
+                <div class="mt-2 space-y-2">
+                    <p class="label-dim text-xs">If sync fails with "failed to decrypt secret" after an APP_ENCRYPTION_KEY rotation, wipe the stored credential so the next sync re-bootstraps from env vars.</p>
+                    <button class="btn btn-xs btn-warning"
+                            hx-post="/integrations/tmo/reset-credential"
+                            hx-confirm="This will delete the stored TMO credential. The next sync will re-read TMO_ACCOUNT and TMO_PIN from the environment. Continue?"
+                            hx-target="#integration-sync-reset-feedback"
+                            hx-swap="innerHTML">
+                        Reset TMO credential
+                    </button>
+                    <div id="integration-sync-reset-feedback" class="min-h-6"></div>
+                </div>
+            </details>
+            {% endif %}
         </div>
     </div>
     <div class="card bg-base-100 shadow-sm border border-base-300">
@@ -76,8 +91,8 @@
                         {% for log in sync_logs %}
                         <tr>
                             <td>{{ log.id|number }}</td>
-                            <td>{{ log.started_at|datetime }}</td>
-                            <td>{% match log.finished_at %}{% when Some with (f) %}{{ f|datetime }}{% when None %}-{% endmatch %}</td>
+                            <td>{{ log.started_at|datetime_local|safe }}</td>
+                            <td>{% match log.finished_at %}{% when Some with (f) %}{{ f|datetime_local|safe }}{% when None %}-{% endmatch %}</td>
                             <td>
                                 {% if log.status == "success" %}
                                 <span class="badge badge-success badge-sm">{{ log.status }}</span>

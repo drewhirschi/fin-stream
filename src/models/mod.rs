@@ -343,6 +343,7 @@ pub struct IntegrationConnectionView {
     pub sync_cadence: String,
     pub last_synced_at: Option<String>,
     pub last_error: Option<String>,
+    pub next_scheduled_at: Option<String>,
     pub record_count: i64,
     pub normalized_count: i64,
     pub pending_count: i64,

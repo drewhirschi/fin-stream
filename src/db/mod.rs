@@ -187,6 +187,16 @@ async fn run_migrations(pool: &PgPool) -> anyhow::Result<()> {
     .execute(pool)
     .await?;
 
+    // Observability-only: last time the scheduler projected when the next run
+    // would fire. Cron cadence remains the source of truth; this is just so
+    // the UI can say "next sync expected at <time>".
+    sqlx::query(
+        "ALTER TABLE intg.integration_connection
+         ADD COLUMN IF NOT EXISTS next_scheduled_at TEXT",
+    )
+    .execute(pool)
+    .await?;
+
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS intg.tmo_import_overview (
             id                 BIGSERIAL PRIMARY KEY,
