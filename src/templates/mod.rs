@@ -62,11 +62,27 @@ pub struct IntegrationLoanDetailTemplate {
     pub workspace: LoanWorkspaceView,
     pub workspace_photos: Vec<LoanWorkspacePhotoView>,
     pub payment_history: Vec<TmoImportPaymentView>,
+    pub loan_emails: Vec<ReceivedEmailView>,
     pub workspace_saved: bool,
     pub workspace_error: bool,
     pub photo_uploaded: bool,
     pub photo_error: bool,
     pub feature_saved: bool,
+}
+
+#[derive(Template)]
+#[template(path = "_email_panel.html")]
+pub struct EmailPanelPartial {
+    pub email: ReceivedEmailView,
+    pub attachments: Vec<ReceivedEmailAttachmentView>,
+}
+
+#[derive(Template)]
+#[template(path = "_doc_viewer.html")]
+pub struct DocViewerPartial {
+    pub attachment: ReceivedEmailAttachmentView,
+    pub media_url: String,
+    pub back_url: String,
 }
 
 #[derive(Template)]
@@ -214,6 +230,8 @@ impl_into_response!(
     SyncLogsPartialTemplate,
     InboxTemplate,
     InboxEmailDetailTemplate,
+    EmailPanelPartial,
+    DocViewerPartial,
     LoginTemplate
 );
 

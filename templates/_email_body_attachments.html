@@ -1,0 +1,66 @@
+{# Shared fragment rendering the email body iframe and attachments list.
+   Included by both the full inbox detail page and the slide-out panel.
+   Required context: `email` (ReceivedEmailView), `attachments` (Vec<ReceivedEmailAttachmentView>). #}
+
+{% if email.body_s3_key.is_some() && !email.body_s3_key.as_deref().unwrap_or_default().is_empty() %}
+<div class="card bg-base-100 shadow-sm border border-base-300">
+    <div class="card-body">
+        <h3 class="card-title text-lg">Body</h3>
+        <iframe
+            src="/media/emails/{{ email.body_s3_key.as_deref().unwrap_or_default() }}"
+            class="w-full min-h-96 rounded border border-base-300 bg-white"
+            sandbox="allow-same-origin"
+            loading="lazy">
+        </iframe>
+    </div>
+</div>
+{% endif %}
+
+{% if !attachments.is_empty() %}
+<div class="card bg-base-100 shadow-sm border border-base-300">
+    <div class="card-body">
+        <h3 class="card-title text-lg">Attachments</h3>
+        <div class="overflow-x-auto">
+            <table class="table bg-base-100">
+                <thead>
+                    <tr>
+                        <th>Filename</th>
+                        <th>Type</th>
+                        <th>Size</th>
+                        <th>Status</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for att in attachments %}
+                    <tr>
+                        <td class="font-mono text-sm">{{ att.filename }}</td>
+                        <td class="text-sm">{{ att.content_type }}</td>
+                        <td class="text-sm">
+                            {% match att.size_bytes %}
+                                {% when Some with (s) %}{{ s|number }} bytes
+                                {% when None %}—
+                            {% endmatch %}
+                        </td>
+                        <td>
+                            {% if att.processing_state == "stored" %}
+                            <span class="badge badge-success badge-sm">Stored</span>
+                            {% else %}
+                            <span class="badge badge-warning badge-sm">{{ att.processing_state }}</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% match att.s3_key %}
+                            {% when Some with (key) %}
+                            <a href="/media/emails/{{ key }}" class="btn btn-xs btn-ghost" target="_blank" download="{{ att.filename }}">Download</a>
+                            {% when None %}
+                            {% endmatch %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
