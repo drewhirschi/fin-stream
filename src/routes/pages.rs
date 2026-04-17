@@ -45,6 +45,11 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/canvas", get(canvas))
         .route("/inbox", get(inbox))
         .route("/inbox/{email_id}", get(inbox_email_detail))
+        .route("/inbox/{email_id}/panel", get(inbox_email_panel))
+        .route(
+            "/inbox/{email_id}/attachments/{attachment_id}/viewer",
+            get(inbox_attachment_viewer),
+        )
         .route("/inbox/{email_id}/link", post(link_email_to_loan))
         .route("/inbox/{email_id}/unlink", post(unlink_email_from_loan))
 }
@@ -223,6 +228,7 @@ async fn integration_loan_detail(
         db::workspaces::list_loan_workspace_photos(&state.db, connection.id, &loan_account)
             .await
             .unwrap_or_default();
+    let loan_emails = db::emails::list_emails_for_loan(&state.db, &loan_account).await;
 
     templates::IntegrationLoanDetailTemplate {
         title: format!("Trust Deeds - {} {}", connection.name, loan.loan_account),
@@ -231,6 +237,7 @@ async fn integration_loan_detail(
         workspace,
         workspace_photos,
         payment_history,
+        loan_emails,
         workspace_saved: params.workspace_saved == Some(1),
         workspace_error: params.workspace_error == Some(1),
         photo_uploaded: params.photo_uploaded == Some(1),
@@ -734,6 +741,52 @@ async fn inbox_email_detail(
         email,
         attachments,
         loans,
+    }
+    .into_response()
+}
+
+async fn inbox_email_panel(
+    State(state): State<Arc<AppState>>,
+    Path(email_id): Path<i64>,
+) -> axum::response::Response {
+    let Some(email) = db::emails::get_email_by_id(&state.db, email_id).await else {
+        return (
+            axum::http::StatusCode::NOT_FOUND,
+            axum::response::Html("<div class=\"alert alert-error\">Email not found.</div>"),
+        )
+            .into_response();
+    };
+    let attachments = db::emails::list_attachments_for_email(&state.db, email_id).await;
+
+    templates::EmailPanelPartial { email, attachments }.into_response()
+}
+
+async fn inbox_attachment_viewer(
+    State(state): State<Arc<AppState>>,
+    Path((email_id, attachment_id)): Path<(i64, i64)>,
+) -> axum::response::Response {
+    let attachments = db::emails::list_attachments_for_email(&state.db, email_id).await;
+    let Some(attachment) = attachments.into_iter().find(|att| att.id == attachment_id) else {
+        return (
+            axum::http::StatusCode::NOT_FOUND,
+            axum::response::Html("<div class=\"alert alert-error\">Attachment not found.</div>"),
+        )
+            .into_response();
+    };
+    let Some(key) = attachment.s3_key.clone() else {
+        return (
+            axum::http::StatusCode::NOT_FOUND,
+            axum::response::Html(
+                "<div class=\"alert alert-warning\">Attachment is not yet stored.</div>",
+            ),
+        )
+            .into_response();
+    };
+
+    templates::DocViewerPartial {
+        attachment,
+        media_url: format!("/media/emails/{key}"),
+        back_url: format!("/inbox/{email_id}/panel"),
     }
     .into_response()
 }

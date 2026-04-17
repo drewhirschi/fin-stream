@@ -1,0 +1,51 @@
+{# Renders the list of emails linked to a loan inside the Mail tab.
+   Required context: `loan_emails` (Vec<ReceivedEmailView>). #}
+
+{% if loan_emails.is_empty() %}
+<div class="alert alert-info">
+    No emails linked to this loan yet — link one from the inbox.
+</div>
+{% else %}
+<div class="overflow-x-auto">
+    <table class="table bg-base-100">
+        <thead>
+            <tr>
+                <th>Received</th>
+                <th>From</th>
+                <th>Subject</th>
+                <th>Attachments</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for email in loan_emails %}
+            <tr class="hover:bg-base-200/50 cursor-pointer"
+                @click="openEmail('/inbox/{{ email.id }}/panel')">
+                <td class="whitespace-nowrap text-sm">{{ email.received_at|datetime }}</td>
+                <td class="text-sm">{{ email.from_address }}</td>
+                <td>
+                    {% match email.subject %}
+                        {% when Some with (s) %}{{ s }}
+                        {% when None %}(no subject)
+                    {% endmatch %}
+                </td>
+                <td class="text-center">
+                    {% if email.attachment_count > 0 %}
+                    <span class="badge badge-sm">{{ email.attachment_count }}</span>
+                    {% else %}
+                    —
+                    {% endif %}
+                </td>
+                <td>
+                    <button type="button"
+                            class="btn btn-xs btn-ghost"
+                            @click.stop="openEmail('/inbox/{{ email.id }}/panel')">
+                        Open
+                    </button>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}

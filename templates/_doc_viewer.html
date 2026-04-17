@@ -1,0 +1,43 @@
+{# Inline document preview for an attachment.
+   Required context: `attachment` (ReceivedEmailAttachmentView), `media_url` (String). #}
+
+<div class="flex items-center justify-between gap-3 mb-3">
+    <div class="min-w-0">
+        <div class="font-mono text-sm truncate">{{ attachment.filename }}</div>
+        <div class="label-dim text-xs">{{ attachment.content_type }}</div>
+    </div>
+    <div class="flex items-center gap-2 shrink-0">
+        <button type="button"
+                class="btn btn-xs btn-ghost"
+                hx-get="{{ back_url }}"
+                hx-target="#panel-content"
+                hx-swap="innerHTML">
+            Back
+        </button>
+        <a href="{{ media_url }}" class="btn btn-xs btn-outline" target="_blank" download="{{ attachment.filename }}">Download</a>
+    </div>
+</div>
+
+{% if attachment.content_type.starts_with("image/") %}
+<div class="rounded border border-base-300 bg-base-200 overflow-hidden">
+    <img src="{{ media_url }}" alt="{{ attachment.filename }}" class="w-full h-auto block" />
+</div>
+{% else if attachment.content_type == "application/pdf" %}
+<iframe src="{{ media_url }}"
+        class="w-full h-[75vh] rounded border border-base-300 bg-white"
+        loading="lazy"></iframe>
+{% else %}
+<div class="rounded border border-base-300 bg-base-200 p-6 text-center">
+    <div class="font-mono text-sm break-all mb-2">{{ attachment.filename }}</div>
+    <div class="label-dim text-xs mb-1">{{ attachment.content_type }}</div>
+    <div class="label-dim text-xs mb-4">
+        {% match attachment.size_bytes %}
+            {% when Some with (s) %}{{ s|number }} bytes
+            {% when None %}unknown size
+        {% endmatch %}
+    </div>
+    <a href="{{ media_url }}" class="btn btn-primary" target="_blank" download="{{ attachment.filename }}">
+        Download
+    </a>
+</div>
+{% endif %}
