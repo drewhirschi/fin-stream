@@ -73,36 +73,12 @@ struct LoanWorkspaceForm {
     notes: Option<String>,
 }
 
-async fn index(State(state): State<Arc<AppState>>) -> templates::IndexTemplate {
-    let loans = db::loans::get_active_loans(&state.db).await;
-    let recent_payments = db::events::get_recent_payments(&state.db, 10).await;
-
-    let snapshot: Option<(
-        Option<f64>,
-        Option<f64>,
-        Option<f64>,
-        Option<f64>,
-        Option<f64>,
-    )> = sqlx::query_as(
-        "SELECT portfolio_value, portfolio_yield, ytd_interest, trust_balance, outstanding_checks
-         FROM portfolio_snapshot ORDER BY snapshot_date DESC LIMIT 1",
-    )
-    .fetch_optional(&state.db)
-    .await
-    .unwrap_or(None);
-
-    let (portfolio_value, portfolio_yield, ytd_interest, trust_balance, outstanding_checks) =
-        snapshot.unwrap_or((None, None, None, None, None));
-
+// Intentionally minimal: the global dashboard is a placeholder until a
+// multi-integration summary is designed. Per-integration stats now live on
+// /integrations/{slug}.
+async fn index() -> templates::IndexTemplate {
     templates::IndexTemplate {
         title: "Trust Deeds - Dashboard".into(),
-        loans,
-        recent_payments,
-        portfolio_value,
-        portfolio_yield,
-        ytd_interest,
-        trust_balance,
-        outstanding_checks,
     }
 }
 
@@ -129,19 +105,52 @@ async fn integration_overview(
         return not_found_for_integration(&slug).into_response();
     };
 
+    let is_tmo = connection.slug == "tmo";
+    let loans = if is_tmo {
+        db::loans::get_active_loans(&state.db).await
+    } else {
+        Vec::new()
+    };
+    let payments = if is_tmo {
+        db::events::get_recent_payments(&state.db, 8).await
+    } else {
+        Vec::new()
+    };
+
+    let snapshot: Option<(
+        Option<f64>,
+        Option<f64>,
+        Option<f64>,
+        Option<f64>,
+        Option<f64>,
+    )> = if is_tmo {
+        sqlx::query_as(
+            "SELECT portfolio_value, portfolio_yield, ytd_interest, trust_balance, outstanding_checks
+             FROM portfolio_snapshot ORDER BY snapshot_date DESC LIMIT 1",
+        )
+        .fetch_optional(&state.db)
+        .await
+        .unwrap_or(None)
+    } else {
+        None
+    };
+
+    let (portfolio_value, portfolio_yield, ytd_interest, trust_balance, outstanding_checks) =
+        snapshot.unwrap_or((None, None, None, None, None));
+
+    let active_loans_count = loans.len() as i64;
+
     templates::IntegrationOverviewTemplate {
         title: format!("Trust Deeds - {}", connection.name),
         current_section: "overview".into(),
-        loans: if connection.slug == "tmo" {
-            db::loans::get_active_loans(&state.db).await
-        } else {
-            Vec::new()
-        },
-        payments: if connection.slug == "tmo" {
-            db::events::get_recent_payments(&state.db, 8).await
-        } else {
-            Vec::new()
-        },
+        loans,
+        payments,
+        portfolio_value,
+        portfolio_yield,
+        ytd_interest,
+        trust_balance,
+        outstanding_checks,
+        active_loans_count,
         connection,
     }
     .into_response()

@@ -2,6 +2,52 @@
 
 {% block integration_page_content %}
 <div class="flex flex-col gap-6">
+    {% if connection.slug == "tmo" %}
+    <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
+        <div class="stat bg-base-100 rounded-box shadow">
+            <div class="stat-title">Portfolio Value</div>
+            <div class="stat-value text-lg">
+                {% match portfolio_value %}
+                    {% when Some with (v) %}${{ v|money }}{% when None %}—{% endmatch %}
+            </div>
+        </div>
+        <div class="stat bg-base-100 rounded-box shadow">
+            <div class="stat-title">Yield</div>
+            <div class="stat-value text-lg">
+                {% match portfolio_yield %}
+                    {% when Some with (v) %}{{ "{:.2}"|format(v) }}%{% when None %}—{% endmatch %}
+            </div>
+        </div>
+        <div class="stat bg-base-100 rounded-box shadow">
+            <div class="stat-title">YTD Interest</div>
+            <div class="stat-value text-lg">
+                {% match ytd_interest %}
+                    {% when Some with (v) %}${{ v|money }}{% when None %}—{% endmatch %}
+            </div>
+        </div>
+        <div class="stat bg-base-100 rounded-box shadow">
+            <div class="stat-title">Cash in Trust</div>
+            <div class="stat-value text-lg">
+                {% match trust_balance %}
+                    {% when Some with (v) %}${{ v|money }}{% when None %}—{% endmatch %}
+            </div>
+        </div>
+        <div class="stat bg-base-100 rounded-box shadow">
+            <div class="stat-title">Pending Checks</div>
+            <div class="stat-value text-lg text-warning">
+                {% match outstanding_checks %}
+                    {% when Some with (v) %}{% if *v > 0.0 %}${{ v|money }}{% else %}—{% endif %}{% when None %}—{% endmatch %}
+            </div>
+            {% match outstanding_checks %}
+                {% when Some with (v) %}{% if *v > 0.0 %}<div class="stat-desc text-warning">Payment incoming</div>{% endif %}{% when _ %}{% endmatch %}
+        </div>
+        <div class="stat bg-base-100 rounded-box shadow">
+            <div class="stat-title">Active Loans</div>
+            <div class="stat-value text-lg">{{ active_loans_count|number }}</div>
+        </div>
+    </div>
+    {% endif %}
+
     <div class="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_20rem] gap-6">
         <div class="card bg-base-100 shadow-sm border border-base-300">
             <div class="card-body">
@@ -23,14 +69,6 @@
             <div class="card-body">
                 <h2 class="card-title text-lg">At a glance</h2>
                 <div class="stats stats-vertical shadow-none bg-transparent p-0">
-                    <div class="stat px-0 py-2">
-                        <div class="stat-title">Loans</div>
-                        <div class="stat-value text-2xl">{{ loans.len()|number }}</div>
-                    </div>
-                    <div class="stat px-0 py-2">
-                        <div class="stat-title">Recent payments</div>
-                        <div class="stat-value text-2xl">{{ payments.len()|number }}</div>
-                    </div>
                     <div class="stat px-0 py-2">
                         <div class="stat-title">Pending imports</div>
                         <div class="stat-value text-2xl">{{ connection.pending_count|number }}</div>
