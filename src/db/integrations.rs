@@ -106,8 +106,8 @@ pub async fn get_or_bootstrap_tmo_credential(
     pool: &PgPool,
     connection_id: i64,
 ) -> anyhow::Result<TmoCredential> {
-    let row: Option<(String, String, String, String)> = sqlx::query_as(
-        "SELECT company_id, account_number, pin_ciphertext, pin_nonce
+    let row: Option<(String, String, String, String, i32)> = sqlx::query_as(
+        "SELECT company_id, account_number, pin_ciphertext, pin_nonce, key_version
          FROM intg.tmo_credential
          WHERE connection_id = $1",
     )
@@ -115,11 +115,28 @@ pub async fn get_or_bootstrap_tmo_credential(
     .fetch_optional(pool)
     .await?;
 
-    if let Some((company_id, account_number, pin_ciphertext, pin_nonce)) = row {
+    if let Some((company_id, account_number, pin_ciphertext, pin_nonce, key_version)) = row {
+        let pin = crate::crypto::decrypt_string(&pin_ciphertext, &pin_nonce).map_err(|e| {
+            let fp = crate::config::app_encryption_key_fingerprint();
+            tracing::error!(
+                "tmo credential decrypt failed (connection_id={}, key_version={}, current_key_fp={}): {}",
+                connection_id,
+                key_version,
+                fp,
+                e
+            );
+            anyhow::anyhow!(
+                "failed to decrypt TMO credential (connection_id={connection_id}, stored \
+                 key_version={key_version}, current APP_ENCRYPTION_KEY fingerprint={fp}). \
+                 This usually means APP_ENCRYPTION_KEY changed since the row was written. \
+                 If intentional, POST /integrations/tmo/reset-credential to re-bootstrap \
+                 from TMO_ACCOUNT/TMO_PIN env vars."
+            )
+        })?;
         return Ok(TmoCredential {
             company_id,
             account_number,
-            pin: crate::crypto::decrypt_string(&pin_ciphertext, &pin_nonce)?,
+            pin,
         });
     }
 
@@ -154,6 +171,18 @@ pub async fn get_or_bootstrap_tmo_credential(
         account_number,
         pin,
     })
+}
+
+/// Wipe the TMO credential row for this connection so the next sync
+/// re-bootstraps from TMO_ACCOUNT / TMO_PIN env vars. Used as a recovery
+/// path when APP_ENCRYPTION_KEY was rotated and existing rows are
+/// undecryptable.
+pub async fn reset_tmo_credential(pool: &PgPool, connection_id: i64) -> anyhow::Result<u64> {
+    let result = sqlx::query("DELETE FROM intg.tmo_credential WHERE connection_id = $1")
+        .bind(connection_id)
+        .execute(pool)
+        .await?;
+    Ok(result.rows_affected())
 }
 
 pub async fn get_or_bootstrap_monarch_credential(
@@ -564,6 +593,7 @@ pub async fn list_connections(pool: &PgPool) -> Vec<IntegrationConnectionView> {
                 c.sync_cadence,
                 c.last_synced_at,
                 c.last_error,
+                c.next_scheduled_at,
                 COALESCE(o.record_count, 0) + COALESCE(l.record_count, 0) + COALESCE(p.record_count, 0) AS record_count,
                 COALESCE(p.normalized_count, 0) AS normalized_count,
                 COALESCE(p.pending_count, 0) AS pending_count
@@ -606,6 +636,7 @@ pub async fn get_connection_by_slug(
                 c.sync_cadence,
                 c.last_synced_at,
                 c.last_error,
+                c.next_scheduled_at,
                 COALESCE(o.record_count, 0) + COALESCE(l.record_count, 0) + COALESCE(p.record_count, 0) AS record_count,
                 COALESCE(p.normalized_count, 0) AS normalized_count,
                 COALESCE(p.pending_count, 0) AS pending_count
@@ -646,6 +677,71 @@ pub async fn list_scheduled_connections(pool: &PgPool) -> Vec<(String, String)> 
     .fetch_all(pool)
     .await
     .unwrap_or_default()
+}
+
+/// Update the observability-only `next_scheduled_at` column. The cron cadence
+/// (plus the scheduler's in-memory loop) remains the source of truth for when
+/// syncs actually fire — this column exists only so the UI can show users
+/// when the next run is expected.
+pub async fn update_connection_next_scheduled_at(
+    pool: &PgPool,
+    slug: &str,
+    next_scheduled_at: Option<&str>,
+) -> anyhow::Result<()> {
+    sqlx::query(
+        "UPDATE intg.integration_connection
+         SET next_scheduled_at = $2,
+             updated_at = TO_CHAR(NOW() AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"')
+         WHERE slug = $1",
+    )
+    .bind(slug)
+    .bind(next_scheduled_at)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// Return the `started_at` of the most recent successful sync for this
+/// connection, parsed as a UTC DateTime. Used on scheduler boot to detect
+/// missed runs within a recent window.
+pub async fn last_successful_sync_started_at(
+    pool: &PgPool,
+    slug: &str,
+) -> Option<chrono::DateTime<chrono::Utc>> {
+    let row: Option<(String,)> = sqlx::query_as(
+        "SELECT started_at
+         FROM sync_log
+         WHERE connection_slug = $1 AND status = 'success'
+         ORDER BY started_at DESC
+         LIMIT 1",
+    )
+    .bind(slug)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten();
+
+    row.and_then(|(started_at,)| {
+        chrono::DateTime::parse_from_rfc3339(&started_at)
+            .ok()
+            .map(|dt| dt.with_timezone(&chrono::Utc))
+    })
+}
+
+/// One-time upgrade path for the TMO integration: if the cadence is still the
+/// default `manual` (or blank), bump it to `every_6h` so the scheduler runs
+/// 4×/day without requiring the user to configure it. No-op if the user has
+/// already set a different cadence.
+pub async fn ensure_tmo_default_cadence(pool: &PgPool) -> anyhow::Result<()> {
+    sqlx::query(
+        "UPDATE intg.integration_connection
+         SET sync_cadence = 'every_6h',
+             updated_at = TO_CHAR(NOW() AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"')
+         WHERE slug = 'tmo' AND (sync_cadence IS NULL OR sync_cadence IN ('', 'manual'))",
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
 }
 
 pub async fn update_sync_cadence(

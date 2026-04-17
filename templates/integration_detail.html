@@ -26,16 +26,26 @@
     <div class="flex flex-wrap items-center gap-3">
         <div class="text-sm">
             <span class="label-dim">Last synced:</span>
-            {{ connection.last_synced_at.as_deref().unwrap_or("Never") }}
+            {% match connection.last_synced_at %}
+                {% when Some with (ts) %}{{ ts|datetime_local|safe }}
+                {% when None %}Never
+            {% endmatch %}
         </div>
         <div class="text-sm">
-            <span class="label-dim">Sync cron:</span>
-            {% if connection.sync_cadence.is_empty() %}
-            Not set
+            <span class="label-dim">Cadence:</span>
+            {% if connection.sync_cadence.is_empty() || connection.sync_cadence == "manual" %}
+            Manual only
             {% else %}
-            <span class="font-mono text-xs">{{ connection.sync_cadence }}</span>
+            <span class="text-xs">{{ connection.sync_cadence }}</span>
             {% endif %}
         </div>
+        {% match connection.next_scheduled_at %}
+        {% when Some with (next) %}
+        <div class="text-sm">
+            <span class="label-dim">Next scheduled:</span>
+            {{ next|datetime_local|safe }}
+        </div>
+        {% when None %}{% endmatch %}
     </div>
 
     {% match connection.last_error %}
@@ -81,30 +91,30 @@
 
 <section class="mb-10" x-show="tab === 'sync'">
     <div class="grid grid-cols-1 xl:grid-cols-[20rem_minmax(0,1fr)] gap-6">
-        <div class="card bg-base-100 shadow-sm border border-base-300"
-             x-data="{ cron: '{{ connection.sync_cadence|escape }}' }">
+        <div class="card bg-base-100 shadow-sm border border-base-300">
             <div class="card-body">
                 <h2 class="card-title text-lg">Sync Settings</h2>
-                <p class="label-dim text-sm">Save a cron expression for this integration. The shortcuts just fill in a cron for you so we keep one consistent format.</p>
+                <p class="label-dim text-sm">Pick how often this integration should sync. All times are UTC.</p>
                 <form class="space-y-4"
                       hx-post="/integrations/{{ connection.slug }}/sync/cadence"
                       hx-target="#sync-cadence-feedback"
                       hx-swap="innerHTML">
                     <label class="form-control w-full">
-                        <span class="label-text mb-2">Cron expression</span>
-                        <input class="input input-bordered w-full font-mono text-sm"
-                               type="text"
-                               name="sync_cadence"
-                               x-model="cron"
-                               placeholder="0 * * * *">
+                        <span class="label-text mb-2">Cadence</span>
+                        <select class="select select-bordered w-full" name="sync_cadence">
+                            <option value="manual" {% if connection.sync_cadence == "manual" || connection.sync_cadence == "" %}selected{% endif %}>Manual only</option>
+                            <option value="hourly" {% if connection.sync_cadence == "hourly" %}selected{% endif %}>Hourly (on the :00)</option>
+                            <option value="every_6h" {% if connection.sync_cadence == "every_6h" %}selected{% endif %}>Every 6 hours (00/06/12/18 UTC)</option>
+                            <option value="every_12h" {% if connection.sync_cadence == "every_12h" %}selected{% endif %}>Every 12 hours (00/12 UTC)</option>
+                            <option value="daily" {% if connection.sync_cadence == "daily" %}selected{% endif %}>Daily (06:00 UTC)</option>
+                        </select>
                     </label>
-                    <div class="flex flex-wrap gap-2">
-                        <button type="button" class="btn btn-xs btn-ghost" @click="cron = ''">Clear</button>
-                        <button type="button" class="btn btn-xs btn-ghost" @click="cron = '0 * * * *'">Hourly</button>
-                        <button type="button" class="btn btn-xs btn-ghost" @click="cron = '0 6 * * *'">Daily 6am</button>
-                        <button type="button" class="btn btn-xs btn-ghost" @click="cron = '0 6 * * 1'">Weekly Mon 6am</button>
-                    </div>
-                    <p class="label-dim text-xs">Examples: <span class="font-mono">0 * * * *</span>, <span class="font-mono">30 7 * * 1-5</span>, <span class="font-mono">0 9 * * 1</span>.</p>
+                    {% match connection.next_scheduled_at %}
+                    {% when Some with (next) %}
+                    <p class="label-dim text-xs">Next scheduled run:
+                        <time data-local="{{ next }}" datetime="{{ next }}">{{ next|datetime }}</time>
+                    </p>
+                    {% when None %}{% endmatch %}
                     <button type="submit" class="btn btn-sm btn-outline">Save cadence</button>
                 </form>
                 <div id="sync-cadence-feedback" class="min-h-6"></div>
@@ -149,8 +159,8 @@
                         {% for log in sync_logs %}
                         <tr>
                             <td>{{ log.id }}</td>
-                            <td>{{ log.started_at[..19] }}</td>
-                            <td>{% match log.finished_at %}{% when Some with (f) %}{{ f[..19] }}{% when None %}-{% endmatch %}</td>
+                            <td>{{ log.started_at|datetime_local|safe }}</td>
+                            <td>{% match log.finished_at %}{% when Some with (f) %}{{ f|datetime_local|safe }}{% when None %}-{% endmatch %}</td>
                             <td>
                                 {% if log.status == "success" %}
                                 <span class="badge badge-success badge-sm">{{ log.status }}</span>

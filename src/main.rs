@@ -60,6 +60,7 @@ async fn main() -> anyhow::Result<()> {
         .merge(routes::pages::router())
         .merge(routes::sync::router())
         .merge(routes::api::router())
+        .merge(routes::health::protected_router())
         .layer(middleware::from_fn_with_state(
             state.clone(),
             auth::require_auth,

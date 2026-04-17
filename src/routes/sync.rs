@@ -39,6 +39,10 @@ pub fn router() -> Router<Arc<AppState>> {
             "/integrations/{slug}/sync/cadence",
             post(update_integration_sync_cadence),
         )
+        .route(
+            "/integrations/tmo/reset-credential",
+            post(reset_tmo_credential),
+        )
 }
 
 async fn sync_page(State(state): State<Arc<AppState>>) -> templates::SyncTemplate {
@@ -255,21 +259,59 @@ async fn integration_sync_logs_partial(
     }
 }
 
+/// Wipe the encrypted TMO credential so the next sync re-bootstraps from
+/// TMO_ACCOUNT / TMO_PIN env vars. Recovery path for the case where
+/// APP_ENCRYPTION_KEY was rotated and the stored row is no longer
+/// decryptable. Sits behind the protected router (session auth required).
+async fn reset_tmo_credential(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    let Some(connection) =
+        crate::db::integrations::get_connection_by_slug(&state.db, "tmo").await
+    else {
+        return axum::response::Html(
+            r#"<div class="alert alert-warning py-2 text-sm">TMO connection not found.</div>"#
+                .to_string(),
+        );
+    };
+
+    match crate::db::integrations::reset_tmo_credential(&state.db, connection.id).await {
+        Ok(rows) => {
+            tracing::warn!(
+                "operator reset TMO credential ({rows} row deleted); next sync will \
+                 re-bootstrap from TMO_ACCOUNT/TMO_PIN"
+            );
+            axum::response::Html(format!(
+                r#"<div class="alert alert-success py-2 text-sm">TMO credential cleared ({rows} row). Run "Sync now" to re-bootstrap.</div>"#
+            ))
+        }
+        Err(err) => {
+            tracing::error!("failed to reset TMO credential: {err}");
+            axum::response::Html(
+                r#"<div class="alert alert-error py-2 text-sm">Could not reset credential — check logs.</div>"#
+                    .to_string(),
+            )
+        }
+    }
+}
+
 async fn update_integration_sync_cadence(
     State(state): State<Arc<AppState>>,
     Path(slug): Path<String>,
     axum::extract::Form(form): axum::extract::Form<SyncCadenceForm>,
 ) -> impl IntoResponse {
-    let cadence = form.sync_cadence.trim().to_string();
+    let raw = form.sync_cadence.trim();
 
-    if cadence.len() > 100 {
+    // Reject free-form input — only the typed enum values are allowed. This
+    // prevents the "oh, it was `0 21 * * *` not `0 */6 * * *`" mistake that
+    // left the TMO integration running once a day.
+    let Some(cadence) = crate::scheduler::SyncCadence::parse(raw) else {
         return axum::response::Html(
-            r#"<div class="alert alert-error py-2 text-sm">Cron expression is too long.</div>"#
+            r#"<div class="alert alert-error py-2 text-sm">Unknown sync cadence. Pick one of the preset options.</div>"#
                 .to_string(),
         );
-    }
+    };
 
-    if let Err(err) = crate::db::integrations::update_sync_cadence(&state.db, &slug, &cadence).await
+    if let Err(err) =
+        crate::db::integrations::update_sync_cadence(&state.db, &slug, cadence.as_str()).await
     {
         tracing::error!("failed to update sync cadence for {}: {}", slug, err);
         return axum::response::Html(
@@ -279,6 +321,6 @@ async fn update_integration_sync_cadence(
     }
 
     axum::response::Html(
-        r#"<div class="alert alert-success py-2 text-sm">Sync cron saved.</div>"#.to_string(),
+        r#"<div class="alert alert-success py-2 text-sm">Sync cadence saved.</div>"#.to_string(),
     )
 }
