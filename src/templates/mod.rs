@@ -10,13 +10,6 @@ use crate::models::*;
 #[template(path = "index.html")]
 pub struct IndexTemplate {
     pub title: String,
-    pub loans: Vec<LoanView>,
-    pub recent_payments: Vec<PaymentView>,
-    pub portfolio_value: Option<f64>,
-    pub portfolio_yield: Option<f64>,
-    pub ytd_interest: Option<f64>,
-    pub trust_balance: Option<f64>,
-    pub outstanding_checks: Option<f64>,
 }
 
 #[derive(Template)]
@@ -41,6 +34,12 @@ pub struct IntegrationOverviewTemplate {
     pub current_section: String,
     pub loans: Vec<LoanView>,
     pub payments: Vec<PaymentView>,
+    pub portfolio_value: Option<f64>,
+    pub portfolio_yield: Option<f64>,
+    pub ytd_interest: Option<f64>,
+    pub trust_balance: Option<f64>,
+    pub outstanding_checks: Option<f64>,
+    pub active_loans_count: i64,
 }
 
 #[derive(Template)]
@@ -113,14 +112,6 @@ pub struct IntegrationDebugTemplate {
     pub tmo_import_payments: Vec<TmoImportPaymentView>,
     pub captured_records: Vec<CapturedProviderRecordView>,
     pub normalized_payments: Vec<PaymentView>,
-}
-
-#[derive(Template)]
-#[template(path = "sync.html")]
-pub struct SyncTemplate {
-    pub title: String,
-    pub logs: Vec<SyncLog>,
-    pub current_status: Option<SyncStatus>,
 }
 
 #[derive(Template)]
@@ -223,7 +214,6 @@ impl_into_response!(
     IntegrationPaymentsTemplate,
     IntegrationSyncTemplate,
     IntegrationDebugTemplate,
-    SyncTemplate,
     ForecastTemplate,
     StreamsTemplate,
     CanvasTemplate,

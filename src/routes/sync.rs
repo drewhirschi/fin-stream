@@ -22,7 +22,6 @@ struct SyncCadenceForm {
 
 pub fn router() -> Router<Arc<AppState>> {
     Router::new()
-        .route("/sync", get(sync_page))
         .route("/sync/run", post(run_sync))
         .route("/sync/status", get(sync_status))
         .route("/sync/logs", get(sync_logs_partial))
@@ -43,25 +42,6 @@ pub fn router() -> Router<Arc<AppState>> {
             "/integrations/tmo/reset-credential",
             post(reset_tmo_credential),
         )
-}
-
-async fn sync_page(State(state): State<Arc<AppState>>) -> templates::SyncTemplate {
-    let logs: Vec<SyncLog> = sqlx::query_as(
-        "SELECT id, connection_slug, started_at, finished_at, status, error_message, endpoints_hit,
-                events_upserted, loans_upserted, snapshots_created
-         FROM sync_log ORDER BY started_at DESC LIMIT 20",
-    )
-    .fetch_all(&state.db)
-    .await
-    .unwrap_or_default();
-
-    let status = state.sync_status.lock().await.clone();
-
-    templates::SyncTemplate {
-        title: "Trust Deeds - Sync".into(),
-        logs,
-        current_status: status,
-    }
 }
 
 /// POST /sync/run — kick off a sync in the background, return immediately.

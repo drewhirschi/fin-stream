@@ -6,40 +6,40 @@
 {% endblock %}
 
 {% block integration_page_content %}
-<div class="grid grid-cols-1 xl:grid-cols-[20rem_minmax(0,1fr)] gap-6">
+<div class="flex flex-col gap-6">
     <div class="card bg-base-100 shadow-sm border border-base-300">
         <div class="card-body">
-            <h2 class="card-title text-lg">Sync Settings</h2>
-            <p class="label-dim text-sm">Pick how often this integration should sync. All times are UTC.</p>
-            <form class="space-y-4"
-                  hx-post="/integrations/{{ connection.slug }}/sync/cadence"
-                  hx-target="#sync-cadence-feedback"
-                  hx-swap="innerHTML">
-                <label class="form-control w-full">
-                    <span class="label-text mb-2">Cadence</span>
-                    <select class="select select-bordered w-full" name="sync_cadence">
-                        <option value="manual" {% if connection.sync_cadence == "manual" || connection.sync_cadence == "" %}selected{% endif %}>Manual only</option>
-                        <option value="hourly" {% if connection.sync_cadence == "hourly" %}selected{% endif %}>Hourly (on the :00)</option>
-                        <option value="every_6h" {% if connection.sync_cadence == "every_6h" %}selected{% endif %}>Every 6 hours (00/06/12/18 UTC)</option>
-                        <option value="every_12h" {% if connection.sync_cadence == "every_12h" %}selected{% endif %}>Every 12 hours (00/12 UTC)</option>
-                        <option value="daily" {% if connection.sync_cadence == "daily" %}selected{% endif %}>Daily (06:00 UTC)</option>
-                    </select>
-                </label>
-                {% match connection.next_scheduled_at %}
-                {% when Some with (next) %}
-                <p class="label-dim text-xs">Next scheduled run: {{ next|datetime_local|safe }}</p>
-                {% when None %}{% endmatch %}
-                <button type="submit" class="btn btn-sm btn-outline">Save cadence</button>
-            </form>
-            <div id="sync-cadence-feedback" class="min-h-6"></div>
-            <div class="divider my-2"></div>
-            <button class="btn btn-primary"
-                    hx-post="/integrations/{{ connection.slug }}/sync/run"
-                    hx-target="#integration-sync-status"
-                    hx-swap="innerHTML">
-                Sync now
-            </button>
+            <div class="flex flex-col sm:flex-row sm:items-end sm:flex-wrap gap-4">
+                <form class="flex flex-col sm:flex-row sm:items-end gap-3 flex-1 min-w-0"
+                      hx-post="/integrations/{{ connection.slug }}/sync/cadence"
+                      hx-target="#sync-cadence-feedback"
+                      hx-swap="innerHTML">
+                    <label class="form-control w-full sm:w-72">
+                        <span class="label-text mb-1">Cadence</span>
+                        <select class="select select-bordered select-sm w-full" name="sync_cadence">
+                            <option value="manual" {% if connection.sync_cadence == "manual" || connection.sync_cadence == "" %}selected{% endif %}>Manual only</option>
+                            <option value="hourly" {% if connection.sync_cadence == "hourly" %}selected{% endif %}>Hourly (on the :00)</option>
+                            <option value="every_6h" {% if connection.sync_cadence == "every_6h" %}selected{% endif %}>Every 6 hours (00/06/12/18 UTC)</option>
+                            <option value="every_12h" {% if connection.sync_cadence == "every_12h" %}selected{% endif %}>Every 12 hours (00/12 UTC)</option>
+                            <option value="daily" {% if connection.sync_cadence == "daily" %}selected{% endif %}>Daily (06:00 UTC)</option>
+                        </select>
+                    </label>
+                    <button type="submit" class="btn btn-sm btn-outline">Save cadence</button>
+                </form>
+                <button class="btn btn-sm btn-primary"
+                        hx-post="/integrations/{{ connection.slug }}/sync/run"
+                        hx-target="#integration-sync-status"
+                        hx-swap="innerHTML">
+                    Sync now
+                </button>
+            </div>
+            {% match connection.next_scheduled_at %}
+            {% when Some with (next) %}
+            <p class="label-dim text-xs mt-2">Next scheduled run: {{ next|datetime_local|safe }}</p>
+            {% when None %}{% endmatch %}
+            <div id="sync-cadence-feedback" class="min-h-6 mt-2"></div>
             <div id="integration-sync-status"
+                 class="mt-2"
                  hx-get="/integrations/{{ connection.slug }}/sync/status"
                  hx-trigger="load"
                  hx-swap="innerHTML"></div>
