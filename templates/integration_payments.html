@@ -7,7 +7,7 @@
 
 {% block integration_page_content %}
 <div class="card bg-base-100 shadow-sm border border-base-300">
-    <div class="card-body">
+    <div class="card-body p-3 sm:p-5">
         <div class="flex flex-col gap-4 mb-6 md:flex-row md:items-end md:justify-between">
             <div>
                 <h2 class="card-title">Payments</h2>
@@ -22,33 +22,89 @@
             No imported payment data yet. <a href="/integrations/{{ connection.slug }}/sync" class="link">Run a sync</a> to pull data from {{ connection.name }}.
         </div>
         {% else %}
-        <div class="overflow-x-auto">
+
+        {# Mobile: card list (< md) #}
+        <div class="flex flex-col gap-3 md:hidden">
+            {% for p in payments %}
+            <div class="card bg-base-100 border border-base-300 shadow-sm" x-data="{ open: false }">
+                <div class="card-body p-4 gap-2">
+                    <div class="flex items-start justify-between gap-3">
+                        <div class="flex flex-col">
+                            <span class="text-sm label-dim">{{ p.check_date|date }}</span>
+                            {% if p.check_number.trim().is_empty() %}
+                            <span class="badge badge-ghost badge-sm mt-1">Not yet processed</span>
+                            {% else %}
+                            <span class="badge badge-success badge-sm mt-1">Processed · #{{ p.check_number }}</span>
+                            {% endif %}
+                        </div>
+                        <div class="text-lg font-semibold whitespace-nowrap">${{ p.amount|money }}</div>
+                    </div>
+
+                    <div class="flex flex-col">
+                        <span class="font-mono text-xs">{{ p.loan_account }}</span>
+                        <span class="text-sm truncate" title="{{ p.borrower_name }} · {{ p.property_name }}">{{ p.borrower_name }}</span>
+                    </div>
+
+                    <div class="flex items-center justify-between">
+                        <button type="button"
+                                class="btn btn-ghost btn-sm justify-start px-2"
+                                @click="open = !open"
+                                :aria-expanded="open.toString()">
+                            <span x-text="open ? 'Hide details' : 'Details'"></span>
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 transition-transform" :class="open ? 'rotate-180' : ''" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.06l3.71-3.83a.75.75 0 111.08 1.04l-4.25 4.39a.75.75 0 01-1.08 0L5.21 8.27a.75.75 0 01.02-1.06z" clip-rule="evenodd" />
+                            </svg>
+                        </button>
+                    </div>
+
+                    <div x-show="open" x-transition.opacity class="grid grid-cols-3 gap-2 border-t border-base-300 pt-3 mt-1">
+                        <div class="flex flex-col">
+                            <span class="label-dim text-xs">Service fee</span>
+                            <span class="text-sm">${{ p.service_fee|money }}</span>
+                        </div>
+                        <div class="flex flex-col">
+                            <span class="label-dim text-xs">Interest</span>
+                            <span class="text-sm">${{ p.interest|money }}</span>
+                        </div>
+                        <div class="flex flex-col">
+                            <span class="label-dim text-xs">Principal</span>
+                            <span class="text-sm">${{ p.principal|money }}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+
+        {# Desktop: table (>= md) #}
+        <div class="overflow-x-auto hidden md:block">
             <table class="table bg-base-100">
                 <thead>
                     <tr>
                         <th>Date</th>
                         <th>Loan</th>
-                        <th>Borrower</th>
-                        <th>Property</th>
                         <th>Check #</th>
                         <th>Amount</th>
-                        <th>Service Fee</th>
-                        <th>Interest</th>
-                        <th>Principal</th>
+                        <th class="hidden md:table-cell">Service Fee</th>
+                        <th class="hidden md:table-cell">Interest</th>
+                        <th class="hidden md:table-cell">Principal</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for p in payments %}
                     <tr>
                         <td>{{ p.check_date|date }}</td>
-                        <td class="font-mono text-xs">{{ p.loan_account }}</td>
-                        <td>{{ p.borrower_name }}</td>
-                        <td>{{ p.property_name }}</td>
-                        <td class="font-mono text-xs">{% if p.check_number.trim().is_empty() %}—{% else %}{{ p.check_number }}{% endif %}</td>
+                        <td>
+                            <div class="flex flex-col">
+                                <span class="font-mono text-xs">{{ p.loan_account }}</span>
+                                <span class="text-xs label-dim truncate max-w-[24ch]" title="{{ p.borrower_name }} · {{ p.property_name }}">{{ p.borrower_name }}</span>
+                            </div>
+                        </td>
+                        <td class="font-mono text-xs">{% if p.check_number.trim().is_empty() %}<span class="label-dim">—</span>{% else %}{{ p.check_number }}{% endif %}</td>
                         <td>${{ p.amount|money }}</td>
-                        <td>${{ p.service_fee|money }}</td>
-                        <td>${{ p.interest|money }}</td>
-                        <td>${{ p.principal|money }}</td>
+                        <td class="hidden md:table-cell">${{ p.service_fee|money }}</td>
+                        <td class="hidden md:table-cell">${{ p.interest|money }}</td>
+                        <td class="hidden md:table-cell">${{ p.principal|money }}</td>
                     </tr>
                     {% endfor %}
                 </tbody>
