@@ -8,6 +8,31 @@ pub fn router() -> Router<Arc<AppState>> {
     Router::new()
         .route("/health", get(|| async { "ok" }))
         .route("/healthz", get(|| async { "ok" }))
+        .route("/ready", get(readiness_check))
+}
+
+/// `/ready` — readiness probe that verifies DB connectivity.
+/// Returns 200 when the app can serve traffic, 503 when the DB is
+/// unreachable.  Used by Coolify as the health check for zero-downtime
+/// deploys: the new container only receives traffic once this returns 200.
+async fn readiness_check(
+    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
+) -> impl IntoResponse {
+    match sqlx::query_scalar::<_, i32>("SELECT 1")
+        .fetch_one(&state.db)
+        .await
+    {
+        Ok(_) => (StatusCode::OK, Json(json!({"status": "ok"}))).into_response(),
+        Err(e) => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({
+                "status": "unavailable",
+                "reason": "db_unreachable",
+                "detail": e.to_string(),
+            })),
+        )
+            .into_response(),
+    }
 }
 
 /// Router for health endpoints that require auth (i.e. anything that reveals
