@@ -1,5 +1,15 @@
 # Session Auth + Narrow Webhook Exposure
 
+## Status: COMPLETE (2026-04-16)
+
+**Code: complete.** Landed in commit `10d62e0`. All modules, routes, templates, migrations, and router restructure shipped.
+
+**Post-commit refinements:**
+- `session_cookie_secure()` config accessor (env `SESSION_COOKIE_SECURE`) replaces `cfg!(debug_assertions)` — needed because Tailscale hostnames don't have TLS, so `Secure` must be explicitly opt-in.
+- Unit tests added to `src/auth.rs`: hash/verify round-trip, wrong password rejection, salt uniqueness, whitespace variants, malformed hash error, and an ignored `verify_prod_hash` diagnostic test.
+
+**Dep version note:** `tower-sessions-sqlx-store` shipped at `0.15` paired with `tower-sessions` `0.14` (both use `tower-sessions-core` `0.14`).
+
 ## Context
 
 The app runs on Coolify on a home server (`gory`) behind Tailscale today with zero authentication. A public endpoint is needed for Resend webhooks (already built at `src/routes/webhooks.rs`, not yet wired in).
@@ -162,7 +172,7 @@ Also wire up `routes::webhooks::router()` here (currently built but not merged).
 
 ## 10. Cookie Security
 
-- `Secure` flag: set based on `cfg!(debug_assertions)` — false in dev (no TLS), true in release
+- `Secure` flag: controlled by `SESSION_COOKIE_SECURE` env var (defaults to `false`). Must be `false` when served over plain HTTP (Tailscale-only hostname without TLS).
 - `SameSite::Lax` — needed for form POSTs, prevents CSRF from third-party sites
 - `HttpOnly(true)` — no JS access to session cookie
 - 7-day inactivity expiry — generous for a personal tool
