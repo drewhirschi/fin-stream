@@ -106,33 +106,23 @@ async fn integration_overview(
     };
 
     let is_tmo = connection.slug == "tmo";
-    let loans = if is_tmo {
-        db::loans::get_active_loans(&state.db).await
+    let (loans, payments, snapshot) = if is_tmo {
+        let (loans, payments, snapshot) = tokio::join!(
+            db::loans::get_active_loans(&state.db),
+            db::events::get_recent_payments(&state.db, 8),
+            async {
+                sqlx::query_as::<_, (Option<f64>, Option<f64>, Option<f64>, Option<f64>, Option<f64>)>(
+                    "SELECT portfolio_value, portfolio_yield, ytd_interest, trust_balance, outstanding_checks
+                     FROM portfolio_snapshot ORDER BY snapshot_date DESC LIMIT 1",
+                )
+                .fetch_optional(&state.db)
+                .await
+                .unwrap_or(None)
+            }
+        );
+        (loans, payments, snapshot)
     } else {
-        Vec::new()
-    };
-    let payments = if is_tmo {
-        db::events::get_recent_payments(&state.db, 8).await
-    } else {
-        Vec::new()
-    };
-
-    let snapshot: Option<(
-        Option<f64>,
-        Option<f64>,
-        Option<f64>,
-        Option<f64>,
-        Option<f64>,
-    )> = if is_tmo {
-        sqlx::query_as(
-            "SELECT portfolio_value, portfolio_yield, ytd_interest, trust_balance, outstanding_checks
-             FROM portfolio_snapshot ORDER BY snapshot_date DESC LIMIT 1",
-        )
-        .fetch_optional(&state.db)
-        .await
-        .unwrap_or(None)
-    } else {
-        None
+        (Vec::new(), Vec::new(), None)
     };
 
     let (portfolio_value, portfolio_yield, ytd_interest, trust_balance, outstanding_checks) =
