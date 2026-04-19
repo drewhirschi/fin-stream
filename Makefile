@@ -2,7 +2,7 @@ COOLIFY_URL := http://gory:8000
 APP_UUID := qx36dh9sz8wqauggabhki4h3
 COOLIFY_TOKEN := $(shell cat gory_coolify_access_token.txt)
 IMAGE := ghcr.io/drewhirschi/fin-stream
-BUILDER := fin-stream-multiarch
+BUILDER := fin-stream-builder
 
 deploy: ## Force a new deployment
 	curl -sS "$(COOLIFY_URL)/api/v1/deploy?uuid=$(APP_UUID)&force=true" \
@@ -20,11 +20,11 @@ envs: ## List environment variables
 	curl -sS "$(COOLIFY_URL)/api/v1/applications/$(APP_UUID)/envs" \
 		-H "Authorization: Bearer $(COOLIFY_TOKEN)" | jq '.[] | {key, value}'
 
-build: ## Build and push multi-arch image to GHCR
+build: ## Build and push amd64 image to GHCR
 	@docker buildx inspect $(BUILDER) >/dev/null 2>&1 || \
-		docker buildx create --name $(BUILDER) --use --platform linux/amd64,linux/arm64
+		docker buildx create --name $(BUILDER) --use --platform linux/amd64
 	docker buildx use $(BUILDER)
-	docker buildx build --platform linux/amd64,linux/arm64 \
+	docker buildx build --platform linux/amd64 \
 		-t $(IMAGE):latest -t $(IMAGE):$(shell git rev-parse --short HEAD) \
 		--push .
 
