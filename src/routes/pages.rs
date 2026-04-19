@@ -9,6 +9,8 @@ use rand::{Rng, distributions::Alphanumeric};
 use serde::Deserialize;
 use std::sync::Arc;
 
+use askama::Template;
+
 use crate::AppState;
 use crate::db;
 use crate::templates;
@@ -52,6 +54,8 @@ pub fn router() -> Router<Arc<AppState>> {
         )
         .route("/inbox/{email_id}/link", post(link_email_to_loan))
         .route("/inbox/{email_id}/unlink", post(unlink_email_from_loan))
+        .route("/inbox/{email_id}/delete", post(delete_inbox_email))
+        .route("/inbox/{email_id}/retry", post(retry_inbox_email))
 }
 
 #[derive(Deserialize, Default)]
@@ -90,17 +94,29 @@ async fn legacy_payments() -> Redirect {
     Redirect::permanent("/integrations/tmo/payments")
 }
 
-async fn integrations(State(state): State<Arc<AppState>>) -> templates::IntegrationsTemplate {
-    templates::IntegrationsTemplate {
+async fn integrations(State(state): State<Arc<AppState>>) -> axum::response::Response {
+    if let Some(html) = state.page_cache.get("integrations").await {
+        return axum::response::Html(html).into_response();
+    }
+    let tmpl = templates::IntegrationsTemplate {
         title: "Trust Deeds - Integrations".into(),
         connections: db::integrations::list_connections(&state.db).await,
+    };
+    if let Ok(html) = tmpl.render() {
+        state.page_cache.insert("integrations".into(), html).await;
     }
+    tmpl.into_response()
 }
 
 async fn integration_overview(
     State(state): State<Arc<AppState>>,
     Path(slug): Path<String>,
 ) -> axum::response::Response {
+    let cache_key = format!("tmo:overview:{slug}");
+    if let Some(html) = state.page_cache.get(&cache_key).await {
+        return axum::response::Html(html).into_response();
+    }
+
     let Some(connection) = connection_or_404(&state, &slug).await else {
         return not_found_for_integration(&slug).into_response();
     };
@@ -130,7 +146,7 @@ async fn integration_overview(
 
     let active_loans_count = loans.len() as i64;
 
-    templates::IntegrationOverviewTemplate {
+    let tmpl = templates::IntegrationOverviewTemplate {
         title: format!("Trust Deeds - {}", connection.name),
         current_section: "overview".into(),
         loans,
@@ -142,19 +158,27 @@ async fn integration_overview(
         outstanding_checks,
         active_loans_count,
         connection,
+    };
+    if let Ok(html) = tmpl.render() {
+        state.page_cache.insert(cache_key, html).await;
     }
-    .into_response()
+    tmpl.into_response()
 }
 
 async fn integration_loans(
     State(state): State<Arc<AppState>>,
     Path(slug): Path<String>,
 ) -> axum::response::Response {
+    let cache_key = format!("tmo:loans:{slug}");
+    if let Some(html) = state.page_cache.get(&cache_key).await {
+        return axum::response::Html(html).into_response();
+    }
+
     let Some(connection) = connection_or_404(&state, &slug).await else {
         return not_found_for_integration(&slug).into_response();
     };
 
-    templates::IntegrationLoansTemplate {
+    let tmpl = templates::IntegrationLoansTemplate {
         title: format!("Trust Deeds - {} Loans", connection.name),
         current_section: "loans".into(),
         loans: if connection.slug == "tmo" {
@@ -163,19 +187,27 @@ async fn integration_loans(
             Vec::new()
         },
         connection,
+    };
+    if let Ok(html) = tmpl.render() {
+        state.page_cache.insert(cache_key, html).await;
     }
-    .into_response()
+    tmpl.into_response()
 }
 
 async fn integration_payments(
     State(state): State<Arc<AppState>>,
     Path(slug): Path<String>,
 ) -> axum::response::Response {
+    let cache_key = format!("tmo:payments:{slug}");
+    if let Some(html) = state.page_cache.get(&cache_key).await {
+        return axum::response::Html(html).into_response();
+    }
+
     let Some(connection) = connection_or_404(&state, &slug).await else {
         return not_found_for_integration(&slug).into_response();
     };
 
-    templates::IntegrationPaymentsTemplate {
+    let tmpl = templates::IntegrationPaymentsTemplate {
         title: format!("Trust Deeds - {} Payments", connection.name),
         current_section: "payments".into(),
         payments: if connection.slug == "tmo" {
@@ -184,8 +216,11 @@ async fn integration_payments(
             Vec::new()
         },
         connection,
+    };
+    if let Ok(html) = tmpl.render() {
+        state.page_cache.insert(cache_key, html).await;
     }
-    .into_response()
+    tmpl.into_response()
 }
 
 async fn integration_loan_detail(
@@ -314,6 +349,7 @@ async fn save_loan_workspace(
         return Redirect::to(&format!("{destination}?workspace_error=1")).into_response();
     }
 
+    state.page_cache.invalidate_prefix("tmo:").await;
     Redirect::to(&format!("{destination}?workspace_saved=1")).into_response()
 }
 
@@ -464,6 +500,7 @@ async fn upload_loan_workspace_photos(
         return Redirect::to(&format!("{destination}?photo_error=1")).into_response();
     }
 
+    state.page_cache.invalidate_prefix("tmo:").await;
     Redirect::to(&format!("{destination}?photo_uploaded=1")).into_response()
 }
 
@@ -489,6 +526,7 @@ async fn set_featured_loan_workspace_photo(
         return Redirect::to(&format!("{destination}?photo_error=1")).into_response();
     }
 
+    state.page_cache.invalidate_prefix("tmo:").await;
     Redirect::to(&format!("{destination}?feature_saved=1")).into_response()
 }
 
@@ -649,7 +687,11 @@ fn non_empty_trimmed(value: &str) -> Option<&str> {
     }
 }
 
-async fn forecast(State(state): State<Arc<AppState>>) -> templates::ForecastTemplate {
+async fn forecast(State(state): State<Arc<AppState>>) -> axum::response::Response {
+    if let Some(html) = state.page_cache.get("forecast").await {
+        return axum::response::Html(html).into_response();
+    }
+
     let has_balance = db::forecasts::get_starting_balance(&state.db)
         .await
         .is_some();
@@ -663,7 +705,7 @@ async fn forecast(State(state): State<Arc<AppState>>) -> templates::ForecastTemp
         .unwrap_or(0);
     let default_stream_id = streams.first().map(|stream| stream.id).unwrap_or(0);
 
-    templates::ForecastTemplate {
+    let tmpl = templates::ForecastTemplate {
         title: "Trust Deeds - Timeline".into(),
         has_balance,
         streams,
@@ -672,18 +714,30 @@ async fn forecast(State(state): State<Arc<AppState>>) -> templates::ForecastTemp
         default_view_id,
         selected_view_id,
         default_stream_id,
+    };
+    if let Ok(html) = tmpl.render() {
+        state.page_cache.insert("forecast".into(), html).await;
     }
+    tmpl.into_response()
 }
 
-async fn streams(State(state): State<Arc<AppState>>) -> templates::StreamsTemplate {
-    templates::StreamsTemplate {
+async fn streams(State(state): State<Arc<AppState>>) -> axum::response::Response {
+    if let Some(html) = state.page_cache.get("streams").await {
+        return axum::response::Html(html).into_response();
+    }
+
+    let tmpl = templates::StreamsTemplate {
         title: "Trust Deeds - Streams".into(),
         accounts: db::accounts::list_accounts(&state.db).await,
         streams: db::streams::list_streams(&state.db).await,
         views: db::streams::list_view_editors(&state.db)
             .await
             .unwrap_or_default(),
+    };
+    if let Ok(html) = tmpl.render() {
+        state.page_cache.insert("streams".into(), html).await;
     }
+    tmpl.into_response()
 }
 
 async fn canvas(State(state): State<Arc<AppState>>) -> templates::CanvasTemplate {
@@ -707,15 +761,23 @@ struct LinkEmailForm {
     loan_account: String,
 }
 
-async fn inbox(State(state): State<Arc<AppState>>) -> templates::InboxTemplate {
+async fn inbox(State(state): State<Arc<AppState>>) -> axum::response::Response {
+    if let Some(html) = state.page_cache.get("inbox").await {
+        return axum::response::Html(html).into_response();
+    }
+
     let emails = db::emails::list_unlinked_emails(&state.db).await;
     let loans = db::loans::get_active_loans(&state.db).await;
 
-    templates::InboxTemplate {
+    let tmpl = templates::InboxTemplate {
         title: "Trust Deeds - Inbox".into(),
         emails,
         loans,
+    };
+    if let Ok(html) = tmpl.render() {
+        state.page_cache.insert("inbox".into(), html).await;
     }
+    tmpl.into_response()
 }
 
 async fn inbox_email_detail(
@@ -805,6 +867,8 @@ async fn link_email_to_loan(
         tracing::error!("failed to link email {email_id}: {e}");
     }
 
+    state.page_cache.invalidate("inbox").await;
+    state.page_cache.invalidate_prefix("tmo:").await;
     Redirect::to("/inbox").into_response()
 }
 
@@ -816,6 +880,88 @@ async fn unlink_email_from_loan(
         tracing::error!("failed to unlink email {email_id}: {e}");
     }
 
+    state.page_cache.invalidate("inbox").await;
+    state.page_cache.invalidate_prefix("tmo:").await;
+    Redirect::to("/inbox").into_response()
+}
+
+async fn retry_inbox_email(
+    State(state): State<Arc<AppState>>,
+    Path(email_id): Path<i64>,
+) -> axum::response::Response {
+    let resend_email_id = match db::emails::get_resend_email_id(&state.db, email_id).await {
+        Ok(Some(s)) => s,
+        Ok(None) => return Redirect::to("/inbox").into_response(),
+        Err(e) => {
+            tracing::error!("retry: failed to load email {email_id}: {e}");
+            return Redirect::to("/inbox").into_response();
+        }
+    };
+
+    let attachment_ids = db::emails::list_attachment_fetch_targets(&state.db, email_id)
+        .await
+        .unwrap_or_default();
+
+    if let Err(e) = db::emails::reset_email_for_retry(&state.db, email_id).await {
+        tracing::error!("retry: failed to reset state for {email_id}: {e}");
+    }
+
+    let pool = state.db.clone();
+    tokio::spawn(async move {
+        if let Err(e) = crate::routes::webhooks::fetch_and_store_email(
+            &pool,
+            &resend_email_id,
+            email_id,
+            &attachment_ids,
+        )
+        .await
+        {
+            tracing::error!("retry: fetch/store failed for {resend_email_id}: {e}");
+            let _ = db::emails::mark_email_error(&pool, email_id, &e.to_string()).await;
+        }
+    });
+
+    state.page_cache.invalidate("inbox").await;
+    Redirect::to("/inbox").into_response()
+}
+
+async fn delete_inbox_email(
+    State(state): State<Arc<AppState>>,
+    Path(email_id): Path<i64>,
+) -> axum::response::Response {
+    let keys = match db::emails::delete_email(&state.db, email_id).await {
+        Ok(keys) => keys,
+        Err(e) => {
+            tracing::error!("failed to delete email {email_id}: {e}");
+            return Redirect::to("/inbox").into_response();
+        }
+    };
+
+    // Best-effort S3 cleanup. We already dropped the DB row; a storage failure
+    // here just leaves an orphaned object, which is recoverable out-of-band.
+    if keys.body_s3_key.is_some() || !keys.attachment_s3_keys.is_empty() {
+        match crate::media_storage::MediaStorage::from_env().await {
+            Ok(storage) => {
+                if let Some(body_key) = keys.body_s3_key.as_deref() {
+                    if let Err(e) = storage.delete(body_key).await {
+                        tracing::warn!("orphaned email body {body_key}: {e}");
+                    }
+                }
+                for att_key in &keys.attachment_s3_keys {
+                    if let Err(e) = storage.delete(att_key).await {
+                        tracing::warn!("orphaned attachment {att_key}: {e}");
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "could not init media storage to clean up email {email_id} objects: {e}"
+                );
+            }
+        }
+    }
+
+    state.page_cache.invalidate("inbox").await;
     Redirect::to("/inbox").into_response()
 }
 

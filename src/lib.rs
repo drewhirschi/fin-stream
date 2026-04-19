@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod cache;
 pub mod config;
 pub mod crypto;
 pub mod db;
@@ -18,4 +19,5 @@ use tokio::sync::Mutex;
 pub struct AppState {
     pub db: sqlx::PgPool,
     pub sync_status: Mutex<Option<models::SyncStatus>>,
+    pub page_cache: cache::PageCache,
 }

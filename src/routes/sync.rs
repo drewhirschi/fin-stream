@@ -107,6 +107,7 @@ async fn start_sync(state: Arc<AppState>, slug: String, scoped: bool) -> impl In
             _ => Err(anyhow::anyhow!("sync not wired for {}", slug_for_task)),
         };
 
+        state_clone.page_cache.invalidate_all().await;
         let mut status = state_clone.sync_status.lock().await;
         match result {
             Ok(summary) => {

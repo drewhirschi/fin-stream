@@ -11,6 +11,14 @@ use std::sync::Arc;
 use crate::AppState;
 use crate::db;
 
+/// Invalidate all page cache zones affected by event/stream/account mutations.
+async fn invalidate_data_caches(state: &AppState) {
+    state.page_cache.invalidate("forecast").await;
+    state.page_cache.invalidate("streams").await;
+    state.page_cache.invalidate_prefix("tmo:").await;
+    state.page_cache.invalidate("integrations").await;
+}
+
 pub fn router() -> Router<Arc<AppState>> {
     Router::new()
         .route("/api/forecast", get(get_forecast))
@@ -198,13 +206,16 @@ async fn create_event(
     )
     .await
     {
-        Ok(id) => (StatusCode::CREATED, Json(serde_json::json!({"id": id}))).into_response(),
+        Ok(id) => {
+            invalidate_data_caches(&state).await;
+            (StatusCode::CREATED, Json(serde_json::json!({"id": id}))).into_response()
+        }
         Err(e) => {
-            tracing::error!("failed to create account: {e}");
+            tracing::error!("failed to create event: {e}");
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(
-                    serde_json::json!({"error": "internal", "message": "Failed to create account."}),
+                    serde_json::json!({"error": "internal", "message": "Failed to create event."}),
                 ),
             )
                 .into_response()
@@ -292,7 +303,10 @@ async fn update_event(
         )
         .await
         {
-            Ok(true) => Json(serde_json::json!({"ok": true})).into_response(),
+            Ok(true) => {
+                invalidate_data_caches(&state).await;
+                Json(serde_json::json!({"ok": true})).into_response()
+            }
             Ok(false) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(serde_json::json!({"error": "internal", "message": "Update failed."})),
@@ -340,13 +354,16 @@ async fn create_account(
     )
     .await
     {
-        Ok(id) => (StatusCode::CREATED, Json(serde_json::json!({"id": id}))).into_response(),
+        Ok(id) => {
+            invalidate_data_caches(&state).await;
+            (StatusCode::CREATED, Json(serde_json::json!({"id": id}))).into_response()
+        }
         Err(e) => {
-            tracing::error!("failed to create event: {e}");
+            tracing::error!("failed to create account: {e}");
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(
-                    serde_json::json!({"error": "internal", "message": "Failed to create event."}),
+                    serde_json::json!({"error": "internal", "message": "Failed to create account."}),
                 ),
             )
                 .into_response()
@@ -389,7 +406,10 @@ async fn update_account(
     )
     .await
     {
-        Ok(true) => Json(serde_json::json!({"ok": true})).into_response(),
+        Ok(true) => {
+            invalidate_data_caches(&state).await;
+            Json(serde_json::json!({"ok": true})).into_response()
+        }
         Ok(false) => (
             StatusCode::NOT_FOUND,
             Json(serde_json::json!({"error": "not_found", "message": "Account not found."})),
@@ -474,7 +494,10 @@ async fn create_stream(
     )
     .await
     {
-        Ok(id) => (StatusCode::CREATED, Json(serde_json::json!({"id": id}))).into_response(),
+        Ok(id) => {
+            invalidate_data_caches(&state).await;
+            (StatusCode::CREATED, Json(serde_json::json!({"id": id}))).into_response()
+        }
         Err(e) => {
             tracing::error!("failed to create stream: {e}");
             (
@@ -515,7 +538,10 @@ async fn update_stream(
     )
     .await
     {
-        Ok(true) => Json(serde_json::json!({"ok": true})).into_response(),
+        Ok(true) => {
+            invalidate_data_caches(&state).await;
+            Json(serde_json::json!({"ok": true})).into_response()
+        }
         Ok(false) => (
             StatusCode::NOT_FOUND,
             Json(serde_json::json!({"error": "not_found", "message": "Stream not found."})),
@@ -561,7 +587,10 @@ async fn create_view(
     )
     .await
     {
-        Ok(id) => (StatusCode::CREATED, Json(serde_json::json!({"id": id}))).into_response(),
+        Ok(id) => {
+            invalidate_data_caches(&state).await;
+            (StatusCode::CREATED, Json(serde_json::json!({"id": id}))).into_response()
+        }
         Err(e) => {
             tracing::error!("failed to create view: {e}");
             (
@@ -595,7 +624,10 @@ async fn update_view(
     )
     .await
     {
-        Ok(true) => Json(serde_json::json!({"ok": true})).into_response(),
+        Ok(true) => {
+            invalidate_data_caches(&state).await;
+            Json(serde_json::json!({"ok": true})).into_response()
+        }
         Ok(false) => (
             StatusCode::NOT_FOUND,
             Json(serde_json::json!({"error": "not_found", "message": "View not found."})),
@@ -622,7 +654,10 @@ async fn set_cash_balance(
     Json(req): Json<SetCashRequest>,
 ) -> impl IntoResponse {
     match db::forecasts::set_starting_balance(&state.db, req.amount).await {
-        Ok(()) => Json(serde_json::json!({"ok": true})),
+        Ok(()) => {
+            invalidate_data_caches(&state).await;
+            Json(serde_json::json!({"ok": true}))
+        }
         Err(e) => {
             tracing::error!("failed to set cash balance: {e}");
             Json(serde_json::json!({"error": "internal", "message": "Failed to set balance."}))
@@ -698,15 +733,18 @@ async fn sync_monarch_balance(State(state): State<Arc<AppState>>) -> impl IntoRe
             )
             .await
             {
-                Ok(()) => Json(serde_json::json!({
-                    "ok": true,
-                    "reported_balance": balance.current_balance,
-                    "pending_total": pending_total,
-                    "adjusted_balance": adjusted,
-                    "account": balance.display_name,
-                    "updated_at": balance.updated_at,
-                }))
-                .into_response(),
+                Ok(()) => {
+                    invalidate_data_caches(&state).await;
+                    Json(serde_json::json!({
+                        "ok": true,
+                        "reported_balance": balance.current_balance,
+                        "pending_total": pending_total,
+                        "adjusted_balance": adjusted,
+                        "account": balance.display_name,
+                        "updated_at": balance.updated_at,
+                    }))
+                    .into_response()
+                }
                 Err(e) => {
                     tracing::error!("failed to save Monarch balance: {e}");
                     (

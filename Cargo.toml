@@ -37,3 +37,4 @@ argon2 = "0.5"
 tower-sessions = "0.14"
 tower-sessions-sqlx-store = { version = "0.15", features = ["postgres"] }
 time = "0.3"
+moka = { version = "0.12", features = ["future"] }

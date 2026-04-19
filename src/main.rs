@@ -33,6 +33,7 @@ async fn main() -> anyhow::Result<()> {
     let state = Arc::new(AppState {
         db: pool,
         sync_status: Mutex::new(None),
+        page_cache: trust_deeds::cache::PageCache::from_env(),
     });
 
     // Start the background cron scheduler for integration syncs.
@@ -42,7 +43,7 @@ async fn main() -> anyhow::Result<()> {
         .with_name("__td_session")
         .with_same_site(SameSite::Lax)
         .with_http_only(true)
-        .with_secure(!cfg!(debug_assertions))
+        .with_secure(config::session_cookie_secure())
         .with_expiry(Expiry::OnInactivity(time::Duration::days(7)));
 
     // Public routes — reachable without authentication.

@@ -148,7 +148,7 @@ pub async fn run(state: Arc<AppState>) {
     }
 
     loop {
-        let next_sleep = match tick(&state.db).await {
+        let next_sleep = match tick(&state).await {
             Ok(dur) => dur,
             Err(e) => {
                 tracing::error!("scheduler: tick error: {e}");
@@ -216,7 +216,8 @@ async fn backfill_missed_runs(pool: &PgPool) -> anyhow::Result<()> {
 /// One tick: check all scheduled connections, spawn syncs for any that are
 /// due, persist `next_scheduled_at` for observability, and return how long to
 /// sleep until the earliest next fire time.
-async fn tick(pool: &PgPool) -> anyhow::Result<tokio::time::Duration> {
+async fn tick(state: &Arc<AppState>) -> anyhow::Result<tokio::time::Duration> {
+    let pool = &state.db;
     let connections = crate::db::integrations::list_scheduled_connections(pool).await;
 
     if connections.is_empty() {
@@ -261,12 +262,13 @@ async fn tick(pool: &PgPool) -> anyhow::Result<tokio::time::Duration> {
 
         if should_fire {
             tracing::info!("scheduler: triggering sync for '{slug}'");
-            let pool_clone = pool.clone();
+            let state_clone = Arc::clone(state);
             let slug_clone = slug.clone();
             tokio::spawn(async move {
-                if let Err(e) = run_scheduled_sync(&pool_clone, &slug_clone).await {
+                if let Err(e) = run_scheduled_sync(&state_clone.db, &slug_clone).await {
                     tracing::error!("scheduler: sync failed for '{slug_clone}': {e}");
                 }
+                state_clone.page_cache.invalidate_all().await;
             });
         }
 
