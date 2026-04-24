@@ -57,7 +57,7 @@
                         </button>
                     </div>
 
-                    <div x-show="open" x-transition.opacity class="grid grid-cols-3 gap-2 border-t border-base-300 pt-3 mt-1">
+                    <div x-cloak x-show="open" x-transition.opacity class="grid grid-cols-3 gap-2 border-t border-base-300 pt-3 mt-1">
                         <div class="flex flex-col">
                             <span class="label-dim text-xs">Service fee</span>
                             <span class="text-sm">${{ p.service_fee|money }}</span>

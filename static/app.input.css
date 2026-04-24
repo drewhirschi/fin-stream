@@ -1,0 +1,25 @@
+/* Build-time CSS pipeline entry point.
+ *
+ * `bun run build` (or the css-builder stage in Dockerfile) runs Tailwind v4
+ * against every template in templates/**, emits a purged+minified bundle to
+ * static/app.css, which is the only CSS templates/base.html links.
+ *
+ * No runtime JIT, no shipping 789 KB of unpurged DaisyUI to every user.
+ */
+
+@import "tailwindcss";
+
+@plugin "daisyui" {
+  themes: light, dark;
+}
+
+/* Explicit source globs for Tailwind v4 class-detection.
+ * Covers every Askama template plus any classes built in Rust strings. */
+@source "../templates";
+@source "../src/**/*.rs";
+
+/* Alpine.js x-cloak: hide elements until Alpine initializes, so their
+ * final visibility state is known at first paint (no CLS from Alpine
+ * flipping x-show values after DOM is laid out). Add x-cloak to every
+ * element with x-show or x-if; Alpine strips it on init. */
+[x-cloak] { display: none !important; }

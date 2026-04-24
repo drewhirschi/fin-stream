@@ -6,8 +6,9 @@ Personal income projection tool. Rust web app using the scaffold pattern from `/
 - Rust (edition 2024) + Axum 0.8 + Tokio
 - PostgreSQL via sqlx (runtime-tokio)
 - Askama templates (templates/ directory)
-- DaisyUI 5 + Tailwind CSS 4 (browser JIT) + HTMX 2 + Alpine.js 3
+- DaisyUI 5 + Tailwind CSS 4 (built at Docker build time, purged against templates/) + HTMX 2 + Alpine.js 3
 - All frontend deps vendored in static/vendor/ (no CDN)
+- CSS pipeline: `static/app.input.css` → `@tailwindcss/cli --minify` → `static/app.css`. Local dev: `make css-watch` alongside `cargo watch -x run`. Production: css-builder stage in the Dockerfile runs the same CLI.
 
 ## Development
 ```sh

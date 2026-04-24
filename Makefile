@@ -40,7 +40,13 @@ stats: ## Show CPU, memory, and network usage
 	@ssh gory "docker stats --no-stream --format 'table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.NetIO}}\t{{.BlockIO}}'" \
 		| grep -E '$(APP_CONTAINER)|$(DB_CONTAINER)'
 
+css: ## One-shot: build minified static/app.css from templates
+	bunx @tailwindcss/cli -i static/app.input.css -o static/app.css --minify
+
+css-watch: ## Watch templates + regenerate static/app.css on change (run alongside `cargo watch -x run`)
+	bunx @tailwindcss/cli -i static/app.input.css -o static/app.css --watch
+
 help: ## Show available commands
 	@grep -E '^[a-zA-Z_-]+:.*##' $(MAKEFILE_LIST) | awk -F ':.*## ' '{printf "  make %-12s %s\n", $$1, $$2}'
 
-.PHONY: build ship deploy logs status stats envs help
+.PHONY: build ship deploy logs status stats envs css css-watch help

@@ -4,15 +4,26 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ title }}</title>
-    <link rel="icon" href="/static/favicon.ico">
-    <link rel="stylesheet" href="/static/vendor/css/daisyui.css">
-    <link rel="stylesheet" href="/static/vendor/css/daisyui-themes.css">
-    <script src="/static/vendor/js/tailwindcss.js" type="module"></script>
+    <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
+
+    <link rel="preload" as="font" type="font/woff2" crossorigin
+          href="/static/vendor/fonts/manrope-variable.woff2">
+    <link rel="preload" as="font" type="font/woff2" crossorigin
+          href="/static/vendor/fonts/inter-variable.woff2">
+
+    <!-- Preload Alpine so it arrives before the deferred script tag is parsed.
+         Cuts the "x-cloak visible" window down to font-paint latency. -->
+    <link rel="preload" as="script" href="/static/vendor/js/alpine.min.js">
+
+    <link rel="stylesheet" href="/static/app.css">
+    <link rel="stylesheet" href="/static/vault.css">
+    <link rel="stylesheet" href="/static/style.css">
+
     <script src="/static/vendor/js/htmx.min.js"></script>
     <script src="/static/vendor/js/htmx-ext-preload.js"></script>
     <script src="/static/vendor/js/alpine.min.js" defer></script>
-    <link rel="stylesheet" href="/static/vault.css">
-    <link rel="stylesheet" href="/static/style.css">
     <script src="/static/js/local-time.js" defer></script>
     {% block head %}{% endblock %}
 </head>
@@ -48,7 +59,7 @@
                    :class="collapsed ? 'w-16 items-center px-2' : 'w-64'">
                 <!-- Header -->
                 <div class="flex items-center mb-6" :class="collapsed ? 'justify-center' : 'justify-between px-2'">
-                    <span x-show="!collapsed" class="text-xl font-bold" style="font-family: 'Manrope', system-ui, sans-serif;">Trust Deeds</span>
+                    <span x-cloak x-show="!collapsed" class="text-xl font-bold" style="font-family: 'Manrope', system-ui, sans-serif;">Trust Deeds</span>
                     <button @click="toggle()" class="btn btn-ghost btn-square btn-sm hidden lg:flex">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 transition-transform duration-200" :class="collapsed && 'rotate-180'" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
@@ -57,34 +68,34 @@
                 </div>
                 <ul class="menu app-nav flex-1" :class="collapsed && 'w-full px-0'" preload="mouseover">
                     <li><a href="/" class="nav-link {% block nav_dashboard %}{% endblock %}" {% block nav_dashboard_attrs %}{% endblock %} :class="collapsed && 'justify-center px-0'" :title="collapsed ? 'Dashboard' : ''">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" x-show="collapsed" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0h4"/></svg>
-                        <span x-show="!collapsed">Dashboard</span>
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" x-cloak x-show="collapsed" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0h4"/></svg>
+                        <span x-cloak x-show="!collapsed">Dashboard</span>
                     </a></li>
                     <li><a href="/integrations" class="nav-link {% block nav_integrations %}{% endblock %}" {% block nav_integrations_attrs %}{% endblock %} :class="collapsed && 'justify-center px-0'" :title="collapsed ? 'Integrations' : ''">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" x-show="collapsed" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-                        <span x-show="!collapsed">Integrations</span>
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" x-cloak x-show="collapsed" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                        <span x-cloak x-show="!collapsed">Integrations</span>
                     </a></li>
                     <li><a href="/inbox" class="nav-link {% block nav_inbox %}{% endblock %}" {% block nav_inbox_attrs %}{% endblock %} :class="collapsed && 'justify-center px-0'" :title="collapsed ? 'Inbox' : ''">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" x-show="collapsed" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
-                        <span x-show="!collapsed">Inbox</span>
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" x-cloak x-show="collapsed" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+                        <span x-cloak x-show="!collapsed">Inbox</span>
                     </a></li>
                     <li><a href="/forecast" class="nav-link {% block nav_forecast %}{% endblock %}" {% block nav_forecast_attrs %}{% endblock %} :class="collapsed && 'justify-center px-0'" :title="collapsed ? 'Timeline' : ''">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" x-show="collapsed" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
-                        <span x-show="!collapsed">Timeline</span>
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" x-cloak x-show="collapsed" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                        <span x-cloak x-show="!collapsed">Timeline</span>
                     </a></li>
                     <li><a href="/canvas" class="nav-link {% block nav_canvas %}{% endblock %}" {% block nav_canvas_attrs %}{% endblock %} :class="collapsed && 'justify-center px-0'" :title="collapsed ? 'Canvas' : ''">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" x-show="collapsed" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1V5zm10 0a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1v-4zm10 0a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z"/></svg>
-                        <span x-show="!collapsed">Canvas</span>
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" x-cloak x-show="collapsed" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1V5zm10 0a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1v-4zm10 0a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z"/></svg>
+                        <span x-cloak x-show="!collapsed">Canvas</span>
                     </a></li>
                     <li><a href="/streams" class="nav-link {% block nav_streams %}{% endblock %}" {% block nav_streams_attrs %}{% endblock %} :class="collapsed && 'justify-center px-0'" :title="collapsed ? 'Streams' : ''">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" x-show="collapsed" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.3"/></svg>
-                        <span x-show="!collapsed">Streams</span>
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" x-cloak x-show="collapsed" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.3"/></svg>
+                        <span x-cloak x-show="!collapsed">Streams</span>
                     </a></li>
                 </ul>
 
                 <!-- Answer Badge: cash position at next big expense -->
-                <div x-show="!collapsed" x-data="answerBadge()" x-init="refresh()" class="mt-auto p-3 rounded-xl" style="background: #191c1f;">
-                    <template x-if="loaded && targetDate">
+                <div x-cloak x-show="!collapsed" x-data="answerBadge()" x-init="refresh()" class="mt-auto p-3 rounded-xl" style="background: #191c1f;">
+                    <template x-cloak x-if="loaded && targetDate">
                         <a href="/forecast" class="block no-underline">
                             <div style="font-size: 0.625rem; color: #86948a; text-transform: uppercase; letter-spacing: 0.05em;">Cash on</div>
                             <div style="font-family: 'Roboto Mono', monospace; font-size: 0.8125rem; color: #e1e2e7;" x-text="targetDateFormatted"></div>
@@ -94,7 +105,7 @@
                             </div>
                         </a>
                     </template>
-                    <template x-if="loaded && !targetDate">
+                    <template x-cloak x-if="loaded && !targetDate">
                         <a href="/forecast" class="block no-underline" style="color: #86948a; font-size: 0.75rem;">
                             Set up forecast
                         </a>

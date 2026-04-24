@@ -1,5 +1,18 @@
 # syntax=docker/dockerfile:1.7
 
+# ── CSS builder ──────────────────────────────────────────────────────────────
+# Runs Tailwind v4 against our Askama templates, emits a minified+purged
+# static/app.css. Replaces the browser-JIT Tailwind runtime entirely.
+FROM node:22-alpine AS css-builder
+WORKDIR /css
+COPY package.json package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY static/app.input.css ./static/
+COPY templates ./templates
+COPY src ./src
+RUN npx @tailwindcss/cli -i ./static/app.input.css -o ./static/app.css --minify
+
+# ── Rust builder ─────────────────────────────────────────────────────────────
 FROM rust:1.88-bookworm AS chef
 WORKDIR /app
 
@@ -35,6 +48,8 @@ RUN apt-get update \
 COPY --from=builder /app/target/release/trust-deeds /usr/local/bin/trust-deeds
 COPY --from=builder /app/templates ./templates
 COPY --from=builder /app/static ./static
+# Purged, minified Tailwind bundle — overrides any stale app.css copied above.
+COPY --from=css-builder /css/static/app.css ./static/app.css
 
 RUN useradd --system --uid 10001 --create-home appuser \
     && chown -R appuser:appuser /app

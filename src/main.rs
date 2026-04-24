@@ -1,7 +1,14 @@
-use axum::{Router, middleware};
+use axum::{
+    Router,
+    http::{HeaderValue, header},
+    middleware,
+};
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use tower_http::services::ServeDir;
+use tower::ServiceBuilder;
+use tower_http::{
+    compression::CompressionLayer, services::ServeDir, set_header::SetResponseHeaderLayer,
+};
 use tower_sessions::{Expiry, SessionManagerLayer, cookie::SameSite};
 use tower_sessions_sqlx_store::PostgresStore;
 
@@ -67,12 +74,28 @@ async fn main() -> anyhow::Result<()> {
             auth::require_auth,
         ));
 
+    // Cache static assets for an hour. ServeDir already emits ETag + Last-Modified,
+    // so returning users after the TTL still get 304 Not Modified — `must-revalidate`
+    // makes sure they always check, so a deploy propagates as fast as the TTL.
+    //
+    // CompressionLayer is applied here *in addition* to the outer router-level
+    // one, because axum's outer layers don't always reach responses from nested
+    // services (verified empirically: without this, /static/app.css serves raw).
+    let static_service = ServiceBuilder::new()
+        .layer(SetResponseHeaderLayer::if_not_present(
+            header::CACHE_CONTROL,
+            HeaderValue::from_static("public, max-age=3600, must-revalidate"),
+        ))
+        .layer(CompressionLayer::new())
+        .service(ServeDir::new("static"));
+
     let app = Router::new()
         .merge(public)
         .merge(protected)
-        .nest_service("/static", ServeDir::new("static"))
+        .nest_service("/static", static_service)
         .fallback(routes::pages::not_found)
         .layer(session_layer)
+        .layer(CompressionLayer::new())
         .with_state(state.clone());
 
     #[cfg(debug_assertions)]
