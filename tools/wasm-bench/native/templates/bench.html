@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>{{ title }}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+  </head>
+  <body>
+    <header>
+      <h1>{{ title }}</h1>
+      <nav>
+        {% for section in sections %}
+          <a href="/{{ section }}" class="nav-{{ section }}">{{ section }}</a>
+        {% endfor %}
+      </nav>
+    </header>
+
+    <section class="stats">
+      <div class="stat"><div class="label">Portfolio value</div><div class="value">${{ portfolio_value }}</div></div>
+      <div class="stat"><div class="label">Portfolio yield</div><div class="value">{{ portfolio_yield }}%</div></div>
+      <div class="stat"><div class="label">YTD interest</div><div class="value">${{ ytd_interest }}</div></div>
+      <div class="stat"><div class="label">Trust balance</div><div class="value">${{ trust_balance }}</div></div>
+      <div class="stat"><div class="label">Outstanding checks</div><div class="value">${{ outstanding_checks }}</div></div>
+      <div class="stat"><div class="label">Active loans</div><div class="value">{{ loans.len() }}</div></div>
+    </section>
+
+    <section class="loans">
+      <h2>Loans ({{ loans.len() }})</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Account</th>
+            <th>Borrower</th>
+            <th>Property</th>
+            <th>City</th>
+            <th>State</th>
+            <th>Type</th>
+            <th>Rate</th>
+            <th>Balance</th>
+            <th>Payment</th>
+            <th>Maturity</th>
+            <th>Next due</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for loan in loans %}
+            <tr class="loan-row {% if loan.delinquent %}is-delinquent{% endif %}">
+              <td>{{ loan.account }}</td>
+              <td>{{ loan.borrower }}</td>
+              <td>{{ loan.address }}</td>
+              <td>{{ loan.city }}</td>
+              <td>{{ loan.state }}</td>
+              <td>{{ loan.property_type }}</td>
+              <td>{{ loan.note_rate }}%</td>
+              <td>${{ loan.principal_balance }}</td>
+              <td>${{ loan.regular_payment }}</td>
+              <td>{{ loan.maturity_date }}</td>
+              <td>{{ loan.next_payment_date }}</td>
+              <td>{% if loan.delinquent %}Delinquent{% else %}Current{% endif %}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+
+    <section class="payments">
+      <h2>Recent payments ({{ payments.len() }})</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Label</th>
+            <th>Expected</th>
+            <th>Actual</th>
+            <th>Amount</th>
+            <th>Status</th>
+            <th>Source</th>
+            <th>Loan</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for payment in payments %}
+            <tr class="payment-row">
+              <td>{{ payment.id }}</td>
+              <td>{{ payment.label }}</td>
+              <td>{{ payment.expected_date }}</td>
+              <td>{{ payment.actual_date }}</td>
+              <td>${{ payment.amount }}</td>
+              <td>{{ payment.status }}</td>
+              <td>{{ payment.source_type }}</td>
+              <td>{{ payment.loan_account }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+
+    <footer>
+      <p>Rendered by {{ engine }} in section {{ current_section }}.</p>
+    </footer>
+  </body>
+</html>

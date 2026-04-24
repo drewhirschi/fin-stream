@@ -118,7 +118,7 @@ pub async fn mark_email_error(
     Ok(())
 }
 
-pub async fn list_unlinked_emails(pool: &PgPool) -> Vec<ReceivedEmailView> {
+pub async fn list_inbox_emails(pool: &PgPool, include_linked: bool) -> Vec<ReceivedEmailView> {
     sqlx::query_as(
         "SELECT e.id,
                 e.resend_email_id,
@@ -139,9 +139,10 @@ pub async fn list_unlinked_emails(pool: &PgPool) -> Vec<ReceivedEmailView> {
              FROM intg.received_email_attachment
              GROUP BY email_id
          ) a ON a.email_id = e.id
-         WHERE e.loan_account IS NULL
+         WHERE ($1 OR e.loan_account IS NULL)
          ORDER BY e.created_at DESC",
     )
+    .bind(include_linked)
     .fetch_all(pool)
     .await
     .unwrap_or_default()
@@ -246,6 +247,89 @@ pub async fn link_email_to_loan(
     .await?;
 
     Ok(())
+}
+
+/// Returns (id, resend_email_id) for a stored email, or None if it doesn't
+/// exist. Used by the retry flow to rebuild fetch inputs.
+pub async fn get_resend_email_id(pool: &PgPool, email_id: i64) -> anyhow::Result<Option<String>> {
+    let row: Option<(String,)> =
+        sqlx::query_as("SELECT resend_email_id FROM intg.received_email WHERE id = $1")
+            .bind(email_id)
+            .fetch_optional(pool)
+            .await?;
+    Ok(row.map(|(s,)| s))
+}
+
+/// Attachment rows for an email as (db_id, resend_attachment_id, filename)
+/// triples. Shape matches what `fetch_and_store_email` consumes.
+pub async fn list_attachment_fetch_targets(
+    pool: &PgPool,
+    email_id: i64,
+) -> anyhow::Result<Vec<(i64, String, String)>> {
+    let rows: Vec<(i64, String, String)> = sqlx::query_as(
+        "SELECT id, resend_attachment_id, filename
+         FROM intg.received_email_attachment
+         WHERE email_id = $1",
+    )
+    .bind(email_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
+}
+
+/// Reset an email row to 'pending' state and clear the error message so a
+/// retry can run.
+pub async fn reset_email_for_retry(pool: &PgPool, email_id: i64) -> anyhow::Result<()> {
+    sqlx::query(
+        "UPDATE intg.received_email
+         SET processing_state = 'pending',
+             error_message = NULL,
+             updated_at = TO_CHAR(NOW() AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"')
+         WHERE id = $1",
+    )
+    .bind(email_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// S3 keys that need to be cleaned up after a DB delete.
+pub struct DeletedEmailKeys {
+    pub body_s3_key: Option<String>,
+    pub attachment_s3_keys: Vec<String>,
+}
+
+/// Delete an email and all its attachments (cascaded by FK). Returns the S3
+/// keys so the caller can clean up object storage.
+pub async fn delete_email(pool: &PgPool, email_id: i64) -> anyhow::Result<DeletedEmailKeys> {
+    let body_s3_key: Option<Option<String>> =
+        sqlx::query_scalar("SELECT body_s3_key FROM intg.received_email WHERE id = $1")
+            .bind(email_id)
+            .fetch_optional(pool)
+            .await?;
+
+    let attachment_s3_keys: Vec<Option<String>> = sqlx::query_scalar(
+        "SELECT s3_key FROM intg.received_email_attachment WHERE email_id = $1",
+    )
+    .bind(email_id)
+    .fetch_all(pool)
+    .await?;
+
+    sqlx::query("DELETE FROM intg.received_email WHERE id = $1")
+        .bind(email_id)
+        .execute(pool)
+        .await?;
+
+    Ok(DeletedEmailKeys {
+        body_s3_key: body_s3_key
+            .flatten()
+            .filter(|s| !s.is_empty()),
+        attachment_s3_keys: attachment_s3_keys
+            .into_iter()
+            .flatten()
+            .filter(|s| !s.is_empty())
+            .collect(),
+    })
 }
 
 pub async fn unlink_email(pool: &PgPool, email_id: i64) -> anyhow::Result<()> {

@@ -120,8 +120,8 @@
                                   :stroke="event.amount >= 0 ? '#4edea3' : '#ef4444'" stroke-width="2"></line>
                             <circle :cx="event.x" :cy="event.y - markerStem(event)" r="5.5"
                                     :fill="event.amount >= 0 ? '#4edea3' : '#ef4444'"
-                                    :stroke="event.is_delinquent === 1 ? '#f59e0b' : 'transparent'"
-                                    :stroke-width="event.is_delinquent === 1 ? 3 : 0"></circle>
+                                    :stroke="event.is_late ? '#f59e0b' : 'transparent'"
+                                    :stroke-width="event.is_late ? 3 : 0"></circle>
                         </g>
                     </template>
 
@@ -569,7 +569,7 @@ function timelineApp() {
                             label: this.composer.label.trim(),
                             stream_id: Number(this.composer.stream_id),
                             account_id: this.composer.account_id ? Number(this.composer.account_id) : null,
-                            scheduled_date: this.composer.date,
+                            expected_date: this.composer.date,
                             amount,
                         }),
                     });

@@ -139,7 +139,7 @@ async fn resend_webhook(
     StatusCode::OK
 }
 
-async fn fetch_and_store_email(
+pub(crate) async fn fetch_and_store_email(
     pool: &PgPool,
     resend_email_id: &str,
     email_db_id: i64,
@@ -172,12 +172,28 @@ async fn fetch_and_store_email(
         db::emails::mark_email_body_stored(pool, email_db_id, "", "text/plain").await?;
     }
 
-    // Fetch and store each attachment
+    // Resend's attachments endpoint returns signed download URLs; fetch the
+    // list once and then download each one via its URL.
+    let remote_attachments = match client.list_attachments(resend_email_id).await {
+        Ok(list) => list,
+        Err(e) => {
+            tracing::error!("failed to list attachments for {resend_email_id}: {e}");
+            Vec::new()
+        }
+    };
+
     for (db_id, resend_att_id, filename) in attachment_ids {
-        match client
-            .get_attachment(resend_email_id, resend_att_id)
-            .await
-        {
+        let Some(meta) = remote_attachments.iter().find(|m| m.id == *resend_att_id) else {
+            tracing::error!(
+                "attachment {resend_att_id} for email {resend_email_id} not found in Resend list"
+            );
+            continue;
+        };
+        let Some(download_url) = meta.download_url.as_deref() else {
+            tracing::error!("attachment {resend_att_id} has no download_url");
+            continue;
+        };
+        match client.download_attachment(download_url).await {
             Ok((bytes, _ct)) => {
                 let safe_filename = filename.replace(['/', '\\', '\0'], "_");
                 let att_key =

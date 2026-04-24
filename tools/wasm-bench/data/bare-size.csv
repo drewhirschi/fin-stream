@@ -1,0 +1,4 @@
+variant,what,bytes,human
+native,/home/drew/work/fin-stream/tools/wasm-bench/bare/wasm-bench-native,1024792,1001KiB
+wasm,/home/drew/work/fin-stream/tools/wasm-bench/bare/bench.wasm,117585,115KiB
+wasm-runtime,/home/drew/.local/bin/wasmtime,65828088,63MiB

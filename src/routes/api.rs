@@ -114,7 +114,7 @@ struct CreateEventRequest {
     stream_id: i64,
     account_id: Option<i64>,
     label: String,
-    scheduled_date: String,
+    expected_date: String,
     amount: f64,
 }
 
@@ -137,7 +137,7 @@ async fn create_event(
             .into_response();
     }
 
-    if chrono::NaiveDate::parse_from_str(&req.scheduled_date, "%Y-%m-%d").is_err() {
+    if chrono::NaiveDate::parse_from_str(&req.expected_date, "%Y-%m-%d").is_err() {
         return (
             StatusCode::UNPROCESSABLE_ENTITY,
             Json(serde_json::json!({"error": "validation_error", "message": "Invalid date format. Use YYYY-MM-DD."})),
@@ -190,7 +190,7 @@ async fn create_event(
         req.stream_id,
         req.account_id,
         &req.label,
-        &req.scheduled_date,
+        &req.expected_date,
         req.amount,
         "projected",
         "manual",

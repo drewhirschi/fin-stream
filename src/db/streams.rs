@@ -109,10 +109,7 @@ pub async fn ensure_default_configuration(pool: &PgPool) -> anyhow::Result<()> {
     )
     .await?;
 
-    sqlx::query("UPDATE intg.tmo_import_loan SET stream_id = $1 WHERE stream_id IS NULL")
-        .bind(trust_stream_id)
-        .execute(pool)
-        .await?;
+    crate::db::integrations::backfill_tmo_loan_stream_ids(pool, trust_stream_id).await?;
 
     let default_view_id = ensure_default_view(pool).await?;
     sync_default_view_membership(pool, default_view_id).await?;
@@ -327,8 +324,8 @@ pub async fn refresh_stream_schedule_events(pool: &PgPool) -> anyhow::Result<()>
         "DELETE FROM stream_event
          WHERE source_type = 'stream_schedule'
            AND status = 'projected'
-           AND expected_date IS NULL
-           AND scheduled_date >= $1::date",
+           AND actual_date IS NULL
+           AND expected_date >= $1::date",
     )
     .bind(today.to_string())
     .execute(pool)
@@ -363,14 +360,14 @@ pub async fn refresh_stream_schedule_events(pool: &PgPool) -> anyhow::Result<()>
             .unwrap_or(horizon)
             .min(horizon);
 
-        for scheduled_date in
+        for occurrence in
             monthly_occurrences(effective_start, end, schedule.day_of_month.unwrap_or(1))
         {
             let label = schedule
                 .label
                 .clone()
                 .unwrap_or_else(|| format!("{} due", schedule.stream_name));
-            let source_id = format!("stream_schedule:{}:{}", schedule.id, scheduled_date);
+            let source_id = format!("stream_schedule:{}:{}", schedule.id, occurrence);
             let metadata = serde_json::json!({
                 "schedule_id": schedule.id,
                 "stream_name": schedule.stream_name,
@@ -378,7 +375,7 @@ pub async fn refresh_stream_schedule_events(pool: &PgPool) -> anyhow::Result<()>
 
             sqlx::query(
                 "INSERT INTO stream_event (
-                    stream_id, account_id, label, scheduled_date, amount, status,
+                    stream_id, account_id, label, expected_date, amount, status,
                     source_id, source_type, metadata
                  ) VALUES (
                     $1, $2, $3, $4::date, $5, 'projected', $6, 'stream_schedule', $7
@@ -386,7 +383,7 @@ pub async fn refresh_stream_schedule_events(pool: &PgPool) -> anyhow::Result<()>
                  ON CONFLICT(stream_id, source_type, source_id) DO UPDATE SET
                     account_id = excluded.account_id,
                     label = excluded.label,
-                    scheduled_date = excluded.scheduled_date,
+                    expected_date = excluded.expected_date,
                     amount = excluded.amount,
                     metadata = excluded.metadata,
                     updated_at = TO_CHAR(NOW() AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"')",
@@ -394,7 +391,7 @@ pub async fn refresh_stream_schedule_events(pool: &PgPool) -> anyhow::Result<()>
             .bind(schedule.stream_id)
             .bind(schedule.account_id)
             .bind(label)
-            .bind(scheduled_date.to_string())
+            .bind(occurrence.to_string())
             .bind(schedule.amount)
             .bind(source_id)
             .bind(metadata.to_string())

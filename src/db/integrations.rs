@@ -833,25 +833,105 @@ pub async fn list_captured_records_for_connection(
 
 pub async fn list_normalized_payments(pool: &PgPool, limit: i32) -> Vec<PaymentView> {
     sqlx::query_as(
-        "SELECT id,
-                label,
-                scheduled_date::text as scheduled_date,
-                expected_date::text as expected_date,
-                actual_date::text as actual_date,
-                amount,
-                status,
-                source_type,
-                COALESCE((NULLIF(metadata, '')::jsonb ->> 'is_pending_print_check')::boolean, false) AS is_pending_print_check,
-                NULLIF(NULLIF(metadata, '')::jsonb ->> 'check_number', '') AS check_number,
-                NULLIF(NULLIF(metadata, '')::jsonb ->> 'loan_account', '') AS loan_account,
-                metadata
-         FROM stream_event
-         WHERE source_type = 'tmo_history'
-         ORDER BY COALESCE(actual_date, expected_date, scheduled_date) DESC, id DESC
+        "SELECT e.id,
+                e.label,
+                e.expected_date::text as expected_date,
+                e.actual_date::text as actual_date,
+                e.amount,
+                e.status,
+                e.source_type,
+                CASE
+                    WHEN e.status = 'confirmed' AND e.actual_date IS NULL THEN true
+                    ELSE false
+                END AS is_pending_print_check,
+                NULLIF(p.check_number, '') AS check_number,
+                p.loan_account AS loan_account,
+                e.metadata
+         FROM stream_event e
+         LEFT JOIN intg.tmo_payment_event_link link ON link.stream_event_id = e.id
+         LEFT JOIN intg.tmo_import_payment p ON p.id = link.tmo_payment_id
+         WHERE e.source_type = 'tmo_history'
+         ORDER BY COALESCE(e.actual_date, e.expected_date) DESC, e.id DESC
          LIMIT $1",
     )
     .bind(limit)
     .fetch_all(pool)
     .await
     .unwrap_or_default()
+}
+
+/// Active TMO loans for the /integrations/tmo/loans listing. Replaces
+/// `db::loans::get_active_loans`. TMO-shaped view intentionally.
+pub async fn list_active_tmo_loans(pool: &PgPool) -> Vec<crate::models::tmo::LoanView> {
+    sqlx::query_as(
+        "SELECT loan_account, borrower_name, property_address, property_city, property_state,
+                (
+                    SELECT photo.image_url
+                    FROM intg.loan_workspace_photo photo
+                    WHERE photo.connection_id = intg.tmo_import_loan.connection_id
+                      AND photo.loan_account = intg.tmo_import_loan.loan_account
+                    ORDER BY photo.is_featured DESC, photo.sort_order ASC, photo.id ASC
+                    LIMIT 1
+                ) AS featured_image_url,
+                property_type, percent_owned, note_rate, principal_balance, regular_payment,
+                maturity_date::text as maturity_date,
+                next_payment_date::text as next_payment_date,
+                interest_paid_to::text as interest_paid_to,
+                is_delinquent
+         FROM intg.tmo_import_loan WHERE is_active = 1 ORDER BY loan_account",
+    )
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default()
+}
+
+/// Single TMO loan by loan_account for the detail page. Replaces
+/// `db::loans::get_loan_by_account`.
+pub async fn get_tmo_loan_by_account(
+    pool: &PgPool,
+    loan_account: &str,
+) -> Option<crate::models::tmo::LoanDetailView> {
+    sqlx::query_as(
+        "SELECT loan_account,
+                borrower_name,
+                property_address,
+                property_city,
+                property_state,
+                property_zip,
+                property_description,
+                property_type,
+                occupancy,
+                percent_owned,
+                note_rate,
+                original_balance,
+                principal_balance,
+                regular_payment,
+                payment_frequency,
+                maturity_date::text as maturity_date,
+                next_payment_date::text as next_payment_date,
+                interest_paid_to::text as interest_paid_to,
+                billed_through::text as billed_through,
+                appraised_value,
+                ltv,
+                is_delinquent
+         FROM intg.tmo_import_loan
+         WHERE loan_account = $1
+         LIMIT 1",
+    )
+    .bind(loan_account)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten()
+}
+
+/// Link any TMO loan rows still missing a stream assignment to the given
+/// stream. Called from `db::streams::ensure_default_configuration` so that
+/// streams code never reaches into `intg.*` directly.
+pub async fn backfill_tmo_loan_stream_ids(pool: &PgPool, stream_id: i64) -> anyhow::Result<()> {
+    sqlx::query("UPDATE intg.tmo_import_loan SET stream_id = $1 WHERE stream_id IS NULL")
+        .bind(stream_id)
+        .execute(pool)
+        .await?;
+    Ok(())
 }

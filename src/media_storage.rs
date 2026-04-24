@@ -112,6 +112,35 @@ impl MediaStorage {
         }
     }
 
+    /// Delete an object by key. Idempotent — missing objects return Ok(()).
+    pub async fn delete(&self, object_key: &str) -> anyhow::Result<()> {
+        match self {
+            Self::Local { base_dir, .. } => {
+                let path = base_dir.join(object_key);
+                match fs::remove_file(&path).await {
+                    Ok(()) => Ok(()),
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                    Err(e) => Err(e).with_context(|| format!("removing {}", path.display())),
+                }
+            }
+            Self::S3 {
+                client,
+                bucket,
+                key_prefix,
+            } => {
+                let key = build_s3_key(key_prefix, object_key);
+                client
+                    .delete_object()
+                    .bucket(bucket)
+                    .key(&key)
+                    .send()
+                    .await
+                    .with_context(|| format!("S3 delete {}", key))?;
+                Ok(())
+            }
+        }
+    }
+
     pub async fn get(&self, object_key: &str) -> anyhow::Result<Option<RetrievedMedia>> {
         match self {
             Self::Local { base_dir, .. } => {

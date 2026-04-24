@@ -145,7 +145,7 @@
                         <tbody>
                             {% for p in payments %}
                             <tr>
-                                <td>{{ p.actual_date.as_deref().or(p.expected_date.as_deref()).unwrap_or(&p.scheduled_date)|date }}</td>
+                                <td>{{ p.actual_date.as_deref().unwrap_or(p.expected_date.as_str())|date }}</td>
                                 <td class="font-mono text-xs">{{ p.loan_account.as_deref().unwrap_or("—") }}</td>
                                 <td>{{ p.label.as_deref().unwrap_or("-") }}</td>
                                 <td>${{ p.amount|money }}</td>
