@@ -58,6 +58,7 @@ async fn main() -> anyhow::Result<()> {
     let protected = Router::new()
         .merge(routes::media::router())
         .merge(routes::pages::router())
+        .merge(routes::integrations::router())
         .merge(routes::sync::router())
         .merge(routes::api::router())
         .merge(routes::health::protected_router())
