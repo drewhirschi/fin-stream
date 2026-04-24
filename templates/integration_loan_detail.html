@@ -75,7 +75,7 @@
             </button>
         </div>
 
-        <section x-show="tab === 'overview'">
+        <section x-cloak x-show="tab === 'overview'">
             <div class="card bg-base-100 shadow-sm border border-base-300">
                 <div class="card-body">
                     <h3 class="card-title">Loan Details</h3>
@@ -137,7 +137,7 @@
             </div>
         </section>
 
-        <section x-show="tab === 'payments'">
+        <section x-cloak x-show="tab === 'payments'">
             <div class="card bg-base-100 shadow-sm border border-base-300">
                 <div class="card-body">
                     <h3 class="card-title">Payment Timeline</h3>
@@ -177,7 +177,7 @@
             </div>
         </section>
 
-        <section x-show="tab === 'workspace'">
+        <section x-cloak x-show="tab === 'workspace'">
             <div class="card bg-base-100 shadow-sm border border-base-300">
                 <div class="card-body">
                     <div class="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
@@ -348,7 +348,7 @@
             </div>
         </section>
 
-        <section x-show="tab === 'mail'">
+        <section x-cloak x-show="tab === 'mail'">
             <div class="card bg-base-100 shadow-sm border border-base-300">
                 <div class="card-body">
                     <h3 class="card-title">Mail</h3>

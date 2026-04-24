@@ -32,15 +32,15 @@
              style="background: radial-gradient(circle at top, rgba(78, 222, 163, 0.08), transparent 26%), var(--vault-surface-dim); touch-action: none; cursor: grab;">
             <canvas x-ref="canvas" class="absolute inset-0 w-full h-full"></canvas>
 
-            <template x-if="hoverInfo">
+            <template x-cloak x-if="hoverInfo">
                 <div class="absolute px-3 py-2 rounded-xl mono text-xs pointer-events-none"
                      :style="`left:${hoverInfo.screenX + 14}px; top:${hoverInfo.screenY - 14}px; background: rgba(11, 13, 15, 0.92); color: var(--vault-on-surface); border: 1px solid var(--vault-outline-variant);`">
                     <div class="font-semibold" x-text="hoverInfo.streamName"></div>
                     <div class="label-dim" x-text="hoverInfo.date"></div>
-                    <template x-if="hoverInfo.events.length === 0">
+                    <template x-cloak x-if="hoverInfo.events.length === 0">
                         <div class="label-dim">No expected events</div>
                     </template>
-                    <template x-if="hoverInfo.events.length > 0">
+                    <template x-cloak x-if="hoverInfo.events.length > 0">
                         <div class="flex flex-col gap-1 mt-1">
                             <template x-for="event in hoverInfo.events" :key="event.event_id">
                                 <div>
@@ -61,7 +61,7 @@
             </div>
 
             <div class="absolute left-5 bottom-20 flex flex-col items-start gap-3" @pointerdown.stop @wheel.stop>
-                <template x-if="showImportMenu">
+                <template x-cloak x-if="showImportMenu">
                     <div class="surface-high p-3 rounded-2xl shadow-ambient" style="min-width: 16rem; border: 1px solid var(--vault-outline-variant);">
                         <div class="label-dim mb-2">Import Stream</div>
                         <div class="flex flex-col gap-2 max-h-72 overflow-y-auto">

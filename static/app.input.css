@@ -17,3 +17,9 @@
  * Covers every Askama template plus any classes built in Rust strings. */
 @source "../templates";
 @source "../src/**/*.rs";
+
+/* Alpine.js x-cloak: hide elements until Alpine initializes, so their
+ * final visibility state is known at first paint (no CLS from Alpine
+ * flipping x-show values after DOM is laid out). Add x-cloak to every
+ * element with x-show or x-if; Alpine strips it on init. */
+[x-cloak] { display: none !important; }

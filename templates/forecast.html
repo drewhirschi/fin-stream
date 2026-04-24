@@ -54,7 +54,7 @@
                     <div class="mono mt-2" x-text="currency(forecast?.cash_source?.amount || forecast?.starting_balance || 0)"></div>
                 </div>
                 <div class="label-dim" x-text="forecast?.cash_source?.detail || 'Using your saved current cash balance.'"></div>
-                <div class="label-dim" x-show="forecast?.cash_source?.updated_at" x-text="'Updated ' + (forecast?.cash_source?.updated_at || '')"></div>
+                <div class="label-dim" x-cloak x-show="forecast?.cash_source?.updated_at" x-text="'Updated ' + (forecast?.cash_source?.updated_at || '')"></div>
                 <div class="flex flex-wrap gap-2">
                     <button class="emerald-pulse px-4 py-2 rounded-lg font-semibold text-sm cursor-pointer"
                             @click="syncMonarchBalance()">
@@ -125,7 +125,7 @@
                         </g>
                     </template>
 
-                    <g x-show="hoverDay !== null">
+                    <g x-cloak x-show="hoverDay !== null">
                         <line :x1="hoverX" :x2="hoverX" y1="20" :y2="chartHeight - 32"
                               stroke="rgba(225,226,231,0.55)" stroke-width="1.5" stroke-dasharray="5 6"></line>
                         <circle :cx="hoverX" :cy="hoverY" r="6" fill="#111417" stroke="#e1e2e7" stroke-width="2"></circle>
@@ -164,13 +164,13 @@
                     </div>
                 </div>
 
-                <template x-if="selectedDayEvents.length === 0">
+                <template x-cloak x-if="selectedDayEvents.length === 0">
                     <div class="surface-high p-5 text-center">
                         <div class="label-dim">No events on this day yet.</div>
                     </div>
                 </template>
 
-                <div class="flex flex-col gap-3" x-show="selectedDayEvents.length > 0">
+                <div class="flex flex-col gap-3" x-cloak x-show="selectedDayEvents.length > 0">
                     <template x-for="event in selectedDayEvents" :key="event.event_id">
                         <button class="surface-high p-4 text-left cursor-pointer"
                                 @click="editEvent(event)">
@@ -179,7 +179,7 @@
                                     <div class="font-semibold" x-text="event.label || event.stream_name || 'Untitled event'"></div>
                                     <div class="label-dim mt-1">
                                         <span x-text="event.stream_name || 'Stream'"></span>
-                                        <span x-show="event.account_name"> • <span x-text="event.account_name"></span></span>
+                                        <span x-cloak x-show="event.account_name"> • <span x-text="event.account_name"></span></span>
                                         <span> • </span>
                                         <span x-text="event.status"></span>
                                     </div>
@@ -241,8 +241,8 @@
                         <button class="emerald-pulse px-4 py-2 rounded-lg font-semibold text-sm cursor-pointer"
                                 @click="saveComposer()"
                                 :disabled="composerSaving">
-                            <span x-show="!composerSaving" x-text="editingEvent ? 'Save Event' : 'Create Event'"></span>
-                            <span x-show="composerSaving">Saving...</span>
+                            <span x-cloak x-show="!composerSaving" x-text="editingEvent ? 'Save Event' : 'Create Event'"></span>
+                            <span x-cloak x-show="composerSaving">Saving...</span>
                         </button>
                         <button class="px-4 py-2 rounded-lg text-sm cursor-pointer"
                                 style="background: var(--vault-surface-container-high); color: var(--vault-on-surface)"
@@ -250,12 +250,12 @@
                             Reset
                         </button>
                     </div>
-                    <div class="label-dim" style="color: var(--vault-secondary)" x-show="composerError" x-text="composerError"></div>
+                    <div class="label-dim" style="color: var(--vault-secondary)" x-cloak x-show="composerError" x-text="composerError"></div>
                 </div>
             </div>
         </section>
 
-        <section class="surface-low p-4 overflow-x-auto" x-show="forecast && forecast.rows.length > 0">
+        <section class="surface-low p-4 overflow-x-auto" x-cloak x-show="forecast && forecast.rows.length > 0">
             <table>
                 <thead>
                     <tr>
@@ -283,13 +283,13 @@
             </table>
         </section>
 
-        <template x-if="loading">
+        <template x-cloak x-if="loading">
             <div class="flex justify-center py-16">
                 <div class="w-8 h-8 rounded-full" style="border: 3px solid var(--vault-surface-container-highest); border-top-color: var(--vault-primary); animation: spin 0.8s linear infinite;"></div>
             </div>
         </template>
 
-        <template x-if="error">
+        <template x-cloak x-if="error">
             <div class="surface-high p-4" style="border-left: 3px solid var(--vault-secondary);">
                 <span style="color: var(--vault-secondary)" x-text="error"></span>
             </div>
