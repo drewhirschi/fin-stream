@@ -433,46 +433,6 @@ async fn test_cleanup_stale_projections() {
 }
 
 // ═══════════════════════════════════════════════════════════
-// Test 6: Service fee estimation from historical data
-// ═══════════════════════════════════════════════════════════
-#[tokio::test]
-async fn test_estimate_service_fee() {
-    let Some(pool) = setup_db().await else {
-        return;
-    };
-
-    // Insert historical payments with service fees in metadata
-    for i in 0..3 {
-        let source_id = format!("hist:{}", i);
-        sqlx::query(
-            "INSERT INTO stream_event (stream_id, label, scheduled_date, actual_date, amount, status, source_id, source_type, metadata)
-             VALUES (1, 'Test', '2026-01-15', '2026-01-15', 400.0, 'received', $1, 'tmo_history', $2)",
-        )
-        .bind(&source_id)
-        .bind(format!("{{\"service_fee\": {}}}", 10.0 + i as f64))
-        .execute(&pool)
-        .await
-        .unwrap();
-    }
-
-    let avg_fee = trust_deeds::db::forecasts::estimate_service_fee(&pool).await;
-    // Average of 10.0, 11.0, 12.0 = 11.0
-    assert!((avg_fee - 11.0).abs() < 0.01);
-}
-
-// ═══════════════════════════════════════════════════════════
-// Test 7: Service fee estimation with no history returns 0
-// ═══════════════════════════════════════════════════════════
-#[tokio::test]
-async fn test_estimate_service_fee_no_history() {
-    let Some(pool) = setup_db().await else {
-        return;
-    };
-    let avg_fee = trust_deeds::db::forecasts::estimate_service_fee(&pool).await;
-    assert_eq!(avg_fee, 0.0);
-}
-
-// ═══════════════════════════════════════════════════════════
 // Test 8: Create event
 // ═══════════════════════════════════════════════════════════
 #[tokio::test]

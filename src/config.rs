@@ -104,6 +104,16 @@ pub fn admin_password() -> Option<String> {
         .filter(|value| !value.trim().is_empty())
 }
 
+/// Whether to mark the session cookie `Secure`. Must be `false` when the app
+/// is served over plain HTTP (e.g. a Tailscale-only hostname without TLS),
+/// otherwise browsers drop the cookie and login silently fails.
+pub fn session_cookie_secure() -> bool {
+    env::var("SESSION_COOKIE_SECURE")
+        .ok()
+        .map(|v| matches!(v.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"))
+        .unwrap_or(false)
+}
+
 pub fn loan_image_storage_dir() -> PathBuf {
     env::var("LOAN_IMAGE_STORAGE_DIR")
         .map(PathBuf::from)

@@ -1,0 +1,3 @@
+variant,seconds,wall_clock,target,rustc_version
+native,12.65,00:00:12,x86_64-unknown-linux-gnu,rustc 1.88.0 (6b00bc388 2025-06-23)
+wasm,5.52,00:00:05,wasm32-wasip2,rustc 1.88.0 (6b00bc388 2025-06-23)

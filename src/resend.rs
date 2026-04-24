@@ -24,6 +24,8 @@ pub struct AttachmentMeta {
     pub id: String,
     pub filename: String,
     pub content_type: String,
+    /// Signed CDN URL to download the attachment bytes. Short-lived (~1 hour).
+    pub download_url: Option<String>,
 }
 
 impl ResendClient {
@@ -35,11 +37,14 @@ impl ResendClient {
     }
 
     /// Fetch the full email content (body) for a received email.
+    ///
+    /// Inbound emails live under `/emails/receiving/{id}` — distinct from the
+    /// `/emails/{id}` endpoint which is for outbound (sent) emails only.
     pub async fn get_received_email(
         &self,
         email_id: &str,
     ) -> anyhow::Result<ReceivedEmailResponse> {
-        let url = format!("{BASE_URL}/emails/{email_id}");
+        let url = format!("{BASE_URL}/emails/receiving/{email_id}");
         let resp = self
             .http
             .get(&url)
@@ -56,12 +61,13 @@ impl ResendClient {
         Ok(resp.json().await?)
     }
 
-    /// List attachments for a received email.
+    /// List attachments for a received email. Each entry includes a signed
+    /// `download_url` for fetching the raw bytes.
     pub async fn list_attachments(
         &self,
         email_id: &str,
     ) -> anyhow::Result<Vec<AttachmentMeta>> {
-        let url = format!("{BASE_URL}/emails/{email_id}/attachments");
+        let url = format!("{BASE_URL}/emails/receiving/{email_id}/attachments");
         let resp = self
             .http
             .get(&url)
@@ -79,24 +85,20 @@ impl ResendClient {
         Ok(list.data)
     }
 
-    /// Download a single attachment's raw bytes.
-    pub async fn get_attachment(
+    /// Download a single attachment via its signed `download_url`. Resend
+    /// doesn't expose a direct-bytes API endpoint for inbound attachments —
+    /// the list endpoint returns a short-lived CDN URL (~1 hour) that we fetch
+    /// without the API key.
+    pub async fn download_attachment(
         &self,
-        email_id: &str,
-        attachment_id: &str,
+        download_url: &str,
     ) -> anyhow::Result<(Vec<u8>, String)> {
-        let url = format!("{BASE_URL}/emails/{email_id}/attachments/{attachment_id}");
-        let resp = self
-            .http
-            .get(&url)
-            .header("Authorization", format!("Bearer {}", self.api_key))
-            .send()
-            .await?;
+        let resp = self.http.get(download_url).send().await?;
 
         if !resp.status().is_success() {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
-            anyhow::bail!("Resend attachment download error {status}: {body}");
+            anyhow::bail!("attachment download error {status}: {body}");
         }
 
         let content_type = resp

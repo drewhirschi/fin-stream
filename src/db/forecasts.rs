@@ -11,8 +11,7 @@ pub struct ForecastRow {
     pub stream_id: i64,
     pub account_id: Option<i64>,
     pub date: String,
-    pub scheduled_date: String,
-    pub expected_date: Option<String>,
+    pub expected_date: String,
     pub actual_date: Option<String>,
     pub label: Option<String>,
     pub stream_name: Option<String>,
@@ -21,7 +20,6 @@ pub struct ForecastRow {
     pub status: String,
     pub source_type: Option<String>,
     pub metadata: Option<String>,
-    pub is_delinquent: Option<i32>,
 }
 
 /// Full forecast response.
@@ -40,8 +38,7 @@ pub struct ForecastRowWithBalance {
     pub stream_id: i64,
     pub account_id: Option<i64>,
     pub date: String,
-    pub scheduled_date: String,
-    pub expected_date: Option<String>,
+    pub expected_date: String,
     pub actual_date: Option<String>,
     pub label: Option<String>,
     pub stream_name: Option<String>,
@@ -51,7 +48,9 @@ pub struct ForecastRowWithBalance {
     pub status: String,
     pub source_type: Option<String>,
     pub metadata: Option<String>,
-    pub is_delinquent: Option<i32>,
+    /// Derived from dates — true iff the event was expected in the past and
+    /// hasn't been received yet. Replaces the TMO-specific `is_delinquent`.
+    pub is_late: bool,
 }
 
 /// Get the starting balance: primary account first, then manual setting, then portfolio snapshot.
@@ -116,8 +115,7 @@ pub async fn get_forecast_events(
         "SELECT e.id as event_id,
                 e.stream_id,
                 e.account_id,
-                COALESCE(e.expected_date, e.scheduled_date)::text as date,
-                e.scheduled_date::text as scheduled_date,
+                e.expected_date::text as date,
                 e.expected_date::text as expected_date,
                 e.actual_date::text as actual_date,
                 e.label,
@@ -126,14 +124,11 @@ pub async fn get_forecast_events(
                 e.amount,
                 e.status,
                 e.source_type,
-                e.metadata,
-                tl.is_delinquent
+                e.metadata
          FROM stream_event e
          JOIN stream s ON e.stream_id = s.id
          LEFT JOIN account a ON a.id = COALESCE(e.account_id, s.default_account_id)
-         LEFT JOIN intg.tmo_import_loan tl
-                ON (NULLIF(e.metadata, '')::jsonb ->> 'loan_account') = tl.loan_account
-         WHERE COALESCE(e.expected_date, e.scheduled_date) BETWEEN $1::date AND $2::date
+         WHERE e.expected_date BETWEEN $1::date AND $2::date
            AND ($3::bigint IS NULL OR e.stream_id = $3)
            AND (
                 $4::bigint IS NULL
@@ -144,7 +139,7 @@ pub async fn get_forecast_events(
                       AND svs.stream_id = e.stream_id
                 )
            )
-         ORDER BY COALESCE(e.expected_date, e.scheduled_date) ASC, e.id ASC",
+         ORDER BY e.expected_date ASC, e.id ASC",
     )
     .bind(from)
     .bind(through)
@@ -171,17 +166,23 @@ pub async fn compute_forecast(
     let cash_source = accounts::get_cash_source(pool).await;
     let events = get_forecast_events(pool, from, through, stream_id, view_id).await?;
 
+    let today = chrono::Utc::now().date_naive();
+
     let mut running = starting_balance;
     let rows = events
         .into_iter()
         .map(|event| {
             running += event.amount;
+            let is_late = event.actual_date.is_none()
+                && chrono::NaiveDate::parse_from_str(&event.expected_date, "%Y-%m-%d")
+                    .map(|d| d < today)
+                    .unwrap_or(false)
+                && matches!(event.status.as_str(), "projected" | "confirmed");
             ForecastRowWithBalance {
                 event_id: event.event_id,
                 stream_id: event.stream_id,
                 account_id: event.account_id,
                 date: event.date,
-                scheduled_date: event.scheduled_date,
                 expected_date: event.expected_date,
                 actual_date: event.actual_date,
                 label: event.label,
@@ -192,7 +193,7 @@ pub async fn compute_forecast(
                 status: event.status,
                 source_type: event.source_type,
                 metadata: event.metadata,
-                is_delinquent: event.is_delinquent,
+                is_late,
             }
         })
         .collect();
@@ -203,20 +204,4 @@ pub async fn compute_forecast(
         rows,
         ending_balance: running,
     }))
-}
-
-/// Estimate the average service fee per payment from historical data.
-pub async fn estimate_service_fee(pool: &PgPool) -> f64 {
-    let result: Option<(f64,)> = sqlx::query_as(
-        "SELECT AVG((NULLIF(metadata, '')::jsonb ->> 'service_fee')::double precision)
-         FROM stream_event
-         WHERE source_type = 'tmo_history'
-           AND (NULLIF(metadata, '')::jsonb ->> 'service_fee') IS NOT NULL",
-    )
-    .fetch_optional(pool)
-    .await
-    .ok()
-    .flatten();
-
-    result.map(|(value,)| value.abs()).unwrap_or(0.0)
 }

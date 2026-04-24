@@ -225,59 +225,50 @@ async fn run_sync_inner(pool: &PgPool) -> anyhow::Result<SyncSummary> {
         } else {
             "received"
         };
-        let expected_date = if is_pending_print_check {
-            Some(check_date)
-        } else {
-            None
-        };
         let actual_date = if is_pending_print_check {
             None
         } else {
             Some(check_date)
         };
 
-        let metadata = serde_json::json!({
-            "check_number": payment.check_number,
-            "is_pending_print_check": is_pending_print_check,
-            "interest": payment.interest,
-            "principal": payment.principal,
-            "service_fee": payment.service_fee,
-            "charges": payment.charges,
-            "late_charges": payment.late_charges,
-            "other": payment.other,
-            "loan_account": payment.loan_account,
-            "tmo_check_date": check_date,
-        });
-
-        let result = sqlx::query(
-            "INSERT INTO stream_event (stream_id, label, scheduled_date, expected_date, actual_date, amount, status,
-             source_id, source_type, metadata)
-             VALUES ($1, $2, $3::date, $4::date, $5::date, $6, $7, $8, 'tmo_history', $9)
+        // No TMO-shaped keys in stream_event.metadata — TMO-specific fields
+        // (check_number, loan_account, interest/principal breakdown) live on
+        // intg.tmo_import_payment and are joined back via
+        // intg.tmo_payment_event_link when the integration layer needs them.
+        let (event_id,): (i64,) = sqlx::query_as(
+            "INSERT INTO stream_event (stream_id, label, expected_date, actual_date, amount, status,
+             source_id, source_type)
+             VALUES ($1, $2, $3::date, $4::date, $5, $6, $7, 'tmo_history')
              ON CONFLICT(stream_id, source_type, source_id) DO UPDATE SET
                label = excluded.label,
-               scheduled_date = excluded.scheduled_date,
                expected_date = excluded.expected_date,
                actual_date = excluded.actual_date,
                amount = excluded.amount,
                status = excluded.status,
-               metadata = excluded.metadata,
-               updated_at = TO_CHAR(NOW() AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"')",
+               updated_at = TO_CHAR(NOW() AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"')
+             RETURNING id",
         )
         .bind(stream_id)
         .bind(&label)
         .bind(check_date)
-        .bind(expected_date)
         .bind(actual_date)
         .bind(payment.amount)
         .bind(status)
         .bind(&source_id)
-        .bind(metadata.to_string())
+        .fetch_one(&mut *history_tx)
+        .await?;
+        events_upserted += 1;
+
+        sqlx::query(
+            "INSERT INTO intg.tmo_payment_event_link (tmo_payment_id, stream_event_id)
+             VALUES ($1, $2)
+             ON CONFLICT (tmo_payment_id) DO UPDATE SET
+               stream_event_id = excluded.stream_event_id",
+        )
+        .bind(payment.id)
+        .bind(event_id)
         .execute(&mut *history_tx)
         .await?;
-
-        if result.rows_affected() > 0 {
-            events_upserted += 1;
-        }
 
         crate::db::integrations::mark_payment_normalized(pool, payment.id, &source_id).await?;
     }

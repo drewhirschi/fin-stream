@@ -31,6 +31,15 @@ cargo run            # manual run, serves on PORT from .env (default 3001)
 - `TMO_COMPANY_ID` defaults to "vci"
 - `DATABASE_URL` defaults to `postgres://postgres:postgres@127.0.0.1:5432/trust_deeds`
 
+## Plans
+
+Plan files live in `docs/plans/` — write implementation plans there as markdown so they're versioned with the code.
+
+- **Active plans**: `docs/plans/*.md` — things currently being designed or implemented
+- **Completed plans**: `docs/plans/completed/*.md` — move plans here once the work lands. Keep them around as design history for future reference (how things were architected, why certain choices were made, tradeoffs considered).
+
+When a plan is done, move it: `git mv docs/plans/foo.md docs/plans/completed/foo.md`. Don't delete plans — the historical record is valuable context for future agents and humans.
+
 ## Deployment (gory)
 
 The app is deployed to a home server named `gory` running Coolify. **Everything stays behind Tailscale** — no ports are forwarded on the home router.
@@ -46,6 +55,10 @@ The app is deployed to a home server named `gory` running Coolify. **Everything 
 - **App auth**: session-based password auth (Argon2id + `tower-sessions` + Postgres store). See `docs/plans/session-auth.md`. Webhook and health routes are public; everything else requires login.
 
 Do NOT propose architectures that expose the dashboard or the app to the public internet directly. Public exposure is opt-in per route via Cloudflare Tunnel only.
+
+## Mobile
+
+The app is used on a phone as well as on desktop. Views that the owner hits on the go — at minimum the dashboard, forecast, inbox, and integrations/loans pages — must be usable on a phone-sized viewport. Tables should collapse or scroll gracefully, tap targets should be finger-sized (DaisyUI `btn`/`btn-sm` is fine; avoid `btn-xs` for primary actions on mobile), and sidebars/drawers should use the DaisyUI drawer pattern already in `templates/base.html`. It's OK if deeper admin or debugging surfaces (raw sync logs, integration debug pages) are desktop-optimized only — just make sure the main flows aren't broken on mobile.
 
 ## Display formatting
 - Always use the shared Askama display filters in `src/filters.rs` for user-visible dates, datetimes, money, and grouped counts.

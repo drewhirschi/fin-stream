@@ -1,0 +1,17 @@
+[package]
+name = "wasm-bench-wasm"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+askama = "0.15"
+wasi = "0.14"
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+opt-level = "s"
+strip = true

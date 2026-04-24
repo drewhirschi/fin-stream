@@ -142,29 +142,24 @@
                         <tr>
                             <td>
                                 {% if p.actual_date.is_some() %}
-                                    <div>{{ p.actual_date.as_deref().unwrap_or(&p.scheduled_date)|date }}</div>
+                                    <div>{{ p.actual_date.as_deref().unwrap_or(p.expected_date.as_str())|date }}</div>
                                     <div class="label-dim text-xs">Actual date</div>
-                                {% else if p.expected_date.is_some() %}
-                                    <div>{{ p.expected_date.as_deref().unwrap_or(&p.scheduled_date)|date }}</div>
-                                    <div class="label-dim text-xs">Expected date</div>
                                 {% else %}
-                                    <div>{{ p.scheduled_date|date }}</div>
-                                    <div class="label-dim text-xs">Scheduled date</div>
+                                    <div>{{ p.expected_date|date }}</div>
+                                    <div class="label-dim text-xs">Expected date</div>
                                 {% endif %}
                             </td>
                             <td>
                                 {% if p.actual_date.is_some() %}
                                     <span class="badge badge-success badge-sm">Actual</span>
-                                {% else if p.expected_date.is_some() %}
-                                    <span class="badge badge-warning badge-sm">Expected</span>
                                 {% else %}
-                                    <span class="badge badge-info badge-sm">Scheduled</span>
+                                    <span class="badge badge-warning badge-sm">Expected</span>
                                 {% endif %}
                             </td>
                             <td class="font-mono text-xs">{{ p.loan_account.as_deref().unwrap_or("—") }}</td>
                             <td class="font-mono text-xs">{{ p.check_number.as_deref().unwrap_or("—") }}</td>
                             <td>{{ p.label.as_deref().unwrap_or("-") }}</td>
-                            <td class="{% if p.actual_date.is_some() %}text-success{% else if p.expected_date.is_some() %}text-warning{% else %}text-info{% endif %}">
+                            <td class="{% if p.actual_date.is_some() %}text-success{% else %}text-warning{% endif %}">
                                 ${{ p.amount|money }}
                             </td>
                         </tr>

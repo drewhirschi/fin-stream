@@ -5,6 +5,9 @@
 .env
 .DS_Store
 .cursor/
-.claude/ralph-loop.local.md
+.claude/
+.zed/
 .gstack/
 gory_coolify_access_token.txt
+data/load-tests/
+tools/wasm-bench/bare/

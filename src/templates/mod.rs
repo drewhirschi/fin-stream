@@ -13,13 +13,6 @@ pub struct IndexTemplate {
 }
 
 #[derive(Template)]
-#[template(path = "loans.html")]
-pub struct LoansTemplate {
-    pub title: String,
-    pub loans: Vec<LoanView>,
-}
-
-#[derive(Template)]
 #[template(path = "integrations.html")]
 pub struct IntegrationsTemplate {
     pub title: String,
@@ -150,6 +143,7 @@ pub struct InboxTemplate {
     pub title: String,
     pub emails: Vec<ReceivedEmailView>,
     pub loans: Vec<LoanView>,
+    pub show_linked: bool,
 }
 
 #[derive(Template)]
@@ -206,7 +200,6 @@ macro_rules! impl_into_response {
 
 impl_into_response!(
     IndexTemplate,
-    LoansTemplate,
     IntegrationsTemplate,
     IntegrationOverviewTemplate,
     IntegrationLoansTemplate,

@@ -1,0 +1,3 @@
+variant,peak_rps,p50_ms,p99_ms,cpu_percent,cpu_cores,mem_mib,rps_per_core
+native,352363.57,1.3,3.7,1270,12.7,24,27745
+wasm,76502.01,5.9,16.6,1440,14.4,108,5312

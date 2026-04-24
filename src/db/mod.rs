@@ -3,7 +3,6 @@ pub mod emails;
 pub mod events;
 pub mod forecasts;
 pub mod integrations;
-pub mod loans;
 pub mod streams;
 pub mod users;
 pub mod workspaces;
@@ -103,8 +102,7 @@ async fn run_migrations(pool: &PgPool) -> anyhow::Result<()> {
             stream_id       BIGINT NOT NULL REFERENCES stream(id),
             account_id      BIGINT,
             label           TEXT,
-            scheduled_date  DATE    NOT NULL,
-            expected_date   DATE,
+            expected_date   DATE    NOT NULL,
             actual_date     DATE,
             amount          DOUBLE PRECISION NOT NULL,
             status          TEXT    NOT NULL DEFAULT 'projected',
@@ -147,6 +145,9 @@ async fn run_migrations(pool: &PgPool) -> anyhow::Result<()> {
         .execute(pool)
         .await?;
     sqlx::query("ALTER TABLE stream ADD COLUMN IF NOT EXISTS configuration TEXT")
+        .execute(pool)
+        .await?;
+    sqlx::query("ALTER TABLE stream ADD COLUMN IF NOT EXISTS parent_id BIGINT REFERENCES stream(id)")
         .execute(pool)
         .await?;
     sqlx::query("ALTER TABLE stream_event ADD COLUMN IF NOT EXISTS account_id BIGINT")
@@ -550,10 +551,19 @@ async fn run_migrations(pool: &PgPool) -> anyhow::Result<()> {
         .execute(pool)
         .await?;
 
+    // Legacy scheduled_date type migration — only runs if the column still
+    // exists (pre-quarantine schemas). After the two-date migration below,
+    // scheduled_date is dropped entirely.
     sqlx::query(
-        "ALTER TABLE stream_event
-         ALTER COLUMN scheduled_date TYPE DATE
-         USING split_part(scheduled_date::text, 'T', 1)::date",
+        "DO $$
+         BEGIN
+             IF EXISTS (
+                 SELECT 1 FROM information_schema.columns
+                 WHERE table_name = 'stream_event' AND column_name = 'scheduled_date'
+             ) THEN
+                 EXECUTE 'ALTER TABLE stream_event ALTER COLUMN scheduled_date TYPE DATE USING split_part(scheduled_date::text, ''T'', 1)::date';
+             END IF;
+         END $$",
     )
     .execute(pool)
     .await?;
@@ -577,6 +587,31 @@ async fn run_migrations(pool: &PgPool) -> anyhow::Result<()> {
     )
     .execute(pool)
     .await?;
+
+    // Two-date migration: backfill expected_date from scheduled_date for any
+    // legacy rows that only had scheduled_date populated, then make expected_date
+    // NOT NULL and drop scheduled_date. Idempotent — safe to re-run.
+    sqlx::query(
+        "DO $$
+         BEGIN
+             IF EXISTS (
+                 SELECT 1 FROM information_schema.columns
+                 WHERE table_name = 'stream_event' AND column_name = 'scheduled_date'
+             ) THEN
+                 UPDATE stream_event
+                 SET expected_date = scheduled_date
+                 WHERE expected_date IS NULL;
+             END IF;
+         END $$",
+    )
+    .execute(pool)
+    .await?;
+    sqlx::query("ALTER TABLE stream_event ALTER COLUMN expected_date SET NOT NULL")
+        .execute(pool)
+        .await?;
+    sqlx::query("ALTER TABLE stream_event DROP COLUMN IF EXISTS scheduled_date")
+        .execute(pool)
+        .await?;
 
     sqlx::query(
         "ALTER TABLE stream_schedule
@@ -671,8 +706,38 @@ async fn run_migrations(pool: &PgPool) -> anyhow::Result<()> {
     .execute(pool)
     .await?;
 
+    // Polymorphic link from TMO payments to normalized stream_event rows.
+    // Lives in intg so the public schema never references integration tables.
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS intg.tmo_payment_event_link (
+            tmo_payment_id  BIGINT PRIMARY KEY REFERENCES intg.tmo_import_payment(id) ON DELETE CASCADE,
+            stream_event_id BIGINT NOT NULL REFERENCES stream_event(id) ON DELETE CASCADE,
+            created_at      TEXT NOT NULL DEFAULT TO_CHAR(NOW() AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"')
+        )",
+    )
+    .execute(pool)
+    .await?;
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_tmo_payment_event_link_event ON intg.tmo_payment_event_link(stream_event_id)").execute(pool).await?;
+
+    // Backfill link rows from existing normalized events. Idempotent via PK conflict.
+    sqlx::query(
+        "INSERT INTO intg.tmo_payment_event_link (tmo_payment_id, stream_event_id)
+         SELECT p.id, e.id
+         FROM intg.tmo_import_payment p
+         JOIN stream_event e
+           ON e.source_type = 'tmo_history'
+          AND e.source_id = p.normalized_event_source_id
+         WHERE p.normalized_event_source_id IS NOT NULL
+         ON CONFLICT (tmo_payment_id) DO NOTHING",
+    )
+    .execute(pool)
+    .await?;
+
     // Indexes
-    sqlx::query("CREATE INDEX IF NOT EXISTS idx_event_stream_scheduled ON stream_event(stream_id, scheduled_date)").execute(pool).await?;
+    sqlx::query("DROP INDEX IF EXISTS idx_event_stream_scheduled")
+        .execute(pool)
+        .await?;
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_event_stream_expected ON stream_event(stream_id, expected_date)").execute(pool).await?;
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_event_account ON stream_event(account_id)")
         .execute(pool)
         .await?;
