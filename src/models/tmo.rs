@@ -189,6 +189,53 @@ pub struct TmoImportPaymentView {
     pub updated_at: String,
 }
 
+impl TmoImportPaymentView {
+    pub fn is_pending_print_check(&self) -> bool {
+        let check_number = self.check_number.trim();
+        check_number.is_empty() || check_number.eq_ignore_ascii_case("print")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::TmoImportPaymentView;
+
+    fn import_payment_with_check_number(check_number: &str) -> TmoImportPaymentView {
+        TmoImportPaymentView {
+            id: 1,
+            connection_id: 1,
+            external_id: "history:test".into(),
+            loan_account: "LN-1".into(),
+            borrower_name: "Borrower".into(),
+            property_name: "Property".into(),
+            check_number: check_number.into(),
+            check_date: "2026-05-18".into(),
+            amount: 100.0,
+            service_fee: 0.0,
+            interest: 100.0,
+            principal: 0.0,
+            charges: 0.0,
+            late_charges: 0.0,
+            other: 0.0,
+            processing_state: "captured".into(),
+            normalized_event_source_id: None,
+            raw_payload: None,
+            updated_at: "2026-05-18T00:00:00Z".into(),
+        }
+    }
+
+    #[test]
+    fn pending_print_check_detects_blank_and_print_values() {
+        assert!(import_payment_with_check_number("").is_pending_print_check());
+        assert!(import_payment_with_check_number(" Print ").is_pending_print_check());
+    }
+
+    #[test]
+    fn pending_print_check_leaves_numbered_checks_processed() {
+        assert!(!import_payment_with_check_number("123456").is_pending_print_check());
+    }
+}
+
 // TMO-enriched payment event view — joined through intg.tmo_payment_event_link
 // for display on integration_overview / integration_debug.
 #[derive(Debug, Serialize, sqlx::FromRow)]
