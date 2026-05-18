@@ -160,9 +160,15 @@
                             </thead>
                             <tbody>
                                 {% for payment in payment_history %}
-                                <tr>
+                                <tr class="{% if payment.check_number.is_none() %}bg-warning/10{% endif %}">
                                     <td>{{ payment.check_date|date }}</td>
-                                    <td class="font-mono text-xs">{% if payment.check_number.trim().is_empty() %}—{% else %}{{ payment.check_number }}{% endif %}</td>
+                                    <td class="font-mono text-xs">
+                                        {% if let Some(check_number) = payment.check_number.as_ref() %}
+                                        {{ check_number }}
+                                        {% else %}
+                                        <span class="badge badge-warning badge-sm font-sans">Pending</span>
+                                        {% endif %}
+                                    </td>
                                     <td>${{ payment.amount|money }}</td>
                                     <td>${{ payment.service_fee|money }}</td>
                                     <td>${{ payment.interest|money }}</td>

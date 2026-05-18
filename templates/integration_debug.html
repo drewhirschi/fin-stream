@@ -84,7 +84,7 @@
                         <tr>
                             <td class="font-mono text-xs">{{ payment.check_date|date }}</td>
                             <td class="font-mono text-xs">{{ payment.loan_account }}</td>
-                            <td class="font-mono text-xs">{{ payment.check_number }}</td>
+                            <td class="font-mono text-xs">{{ payment.check_number.as_deref().unwrap_or("—") }}</td>
                             <td>{{ payment.borrower_name }}</td>
                             <td>{{ payment.property_name }}</td>
                             <td>${{ payment.amount|money }}</td>

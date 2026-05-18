@@ -174,7 +174,7 @@ pub struct TmoImportPaymentView {
     pub loan_account: String,
     pub borrower_name: String,
     pub property_name: String,
-    pub check_number: String,
+    pub check_number: Option<String>,
     pub check_date: String,
     pub amount: f64,
     pub service_fee: f64,
@@ -187,6 +187,44 @@ pub struct TmoImportPaymentView {
     pub normalized_event_source_id: Option<String>,
     pub raw_payload: Option<String>,
     pub updated_at: String,
+}
+
+/// Normalize a TMO `checkNumber` payload value: `None` means TMO hasn't
+/// issued a real check yet (blank, or a placeholder like "Print"/"Print Check").
+pub fn normalize_tmo_check_number(raw: &str) -> Option<String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() || trimmed.to_ascii_lowercase().contains("print") {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_tmo_check_number;
+
+    #[test]
+    fn blank_and_print_variants_normalize_to_none() {
+        assert_eq!(normalize_tmo_check_number(""), None);
+        assert_eq!(normalize_tmo_check_number("   "), None);
+        assert_eq!(normalize_tmo_check_number("Print"), None);
+        assert_eq!(normalize_tmo_check_number(" PRINT "), None);
+        assert_eq!(normalize_tmo_check_number("Print Check"), None);
+        assert_eq!(normalize_tmo_check_number("*PRINT*"), None);
+    }
+
+    #[test]
+    fn real_check_numbers_pass_through() {
+        assert_eq!(
+            normalize_tmo_check_number("123456"),
+            Some("123456".to_string())
+        );
+        assert_eq!(
+            normalize_tmo_check_number("  789  "),
+            Some("789".to_string())
+        );
+    }
 }
 
 // TMO-enriched payment event view — joined through intg.tmo_payment_event_link
