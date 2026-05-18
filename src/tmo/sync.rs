@@ -212,9 +212,7 @@ async fn run_sync_inner(pool: &PgPool) -> anyhow::Result<SyncSummary> {
     for payment in crate::db::integrations::list_tmo_import_payments(pool, connection_id).await? {
         let label = format!("{} - {}", payment.borrower_name, payment.property_name);
         let check_date = payment.check_date.as_str();
-        let normalized_check_number = payment.check_number.trim();
-        let is_pending_print_check = normalized_check_number.is_empty()
-            || normalized_check_number.eq_ignore_ascii_case("print");
+        let is_pending_print_check = payment.check_number.is_none();
         let amount_cents = (payment.amount * 100.0).round() as i64;
         let source_id = format!(
             "history:{}:{}:{}",

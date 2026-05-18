@@ -419,6 +419,8 @@ pub async fn replace_tmo_import_payments(
             "history:{}:{}:{}",
             payment.loan_account, check_date, amount_cents
         );
+        let check_number =
+            crate::models::tmo::normalize_tmo_check_number(&payment.check_number);
 
         sqlx::query(
             "INSERT INTO intg.tmo_import_payment (
@@ -433,7 +435,7 @@ pub async fn replace_tmo_import_payments(
         .bind(&payment.loan_account)
         .bind(&payment.borrower_name)
         .bind(&payment.property_name)
-        .bind(&payment.check_number)
+        .bind(&check_number)
         .bind(check_date)
         .bind(payment.amount)
         .bind(payment.service_fee)
@@ -844,7 +846,7 @@ pub async fn list_normalized_payments(pool: &PgPool, limit: i32) -> Vec<PaymentV
                     WHEN e.status = 'confirmed' AND e.actual_date IS NULL THEN true
                     ELSE false
                 END AS is_pending_print_check,
-                NULLIF(p.check_number, '') AS check_number,
+                p.check_number AS check_number,
                 p.loan_account AS loan_account,
                 e.metadata
          FROM stream_event e

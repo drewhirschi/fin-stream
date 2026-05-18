@@ -174,7 +174,7 @@ pub struct TmoImportPaymentView {
     pub loan_account: String,
     pub borrower_name: String,
     pub property_name: String,
-    pub check_number: String,
+    pub check_number: Option<String>,
     pub check_date: String,
     pub amount: f64,
     pub service_fee: f64,
@@ -189,50 +189,41 @@ pub struct TmoImportPaymentView {
     pub updated_at: String,
 }
 
-impl TmoImportPaymentView {
-    pub fn is_pending_print_check(&self) -> bool {
-        let check_number = self.check_number.trim();
-        check_number.is_empty() || check_number.eq_ignore_ascii_case("print")
+/// Normalize a TMO `checkNumber` payload value: `None` means TMO hasn't
+/// issued a real check yet (blank, or a placeholder like "Print"/"Print Check").
+pub fn normalize_tmo_check_number(raw: &str) -> Option<String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() || trimmed.to_ascii_lowercase().contains("print") {
+        None
+    } else {
+        Some(trimmed.to_string())
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::TmoImportPaymentView;
+    use super::normalize_tmo_check_number;
 
-    fn import_payment_with_check_number(check_number: &str) -> TmoImportPaymentView {
-        TmoImportPaymentView {
-            id: 1,
-            connection_id: 1,
-            external_id: "history:test".into(),
-            loan_account: "LN-1".into(),
-            borrower_name: "Borrower".into(),
-            property_name: "Property".into(),
-            check_number: check_number.into(),
-            check_date: "2026-05-18".into(),
-            amount: 100.0,
-            service_fee: 0.0,
-            interest: 100.0,
-            principal: 0.0,
-            charges: 0.0,
-            late_charges: 0.0,
-            other: 0.0,
-            processing_state: "captured".into(),
-            normalized_event_source_id: None,
-            raw_payload: None,
-            updated_at: "2026-05-18T00:00:00Z".into(),
-        }
+    #[test]
+    fn blank_and_print_variants_normalize_to_none() {
+        assert_eq!(normalize_tmo_check_number(""), None);
+        assert_eq!(normalize_tmo_check_number("   "), None);
+        assert_eq!(normalize_tmo_check_number("Print"), None);
+        assert_eq!(normalize_tmo_check_number(" PRINT "), None);
+        assert_eq!(normalize_tmo_check_number("Print Check"), None);
+        assert_eq!(normalize_tmo_check_number("*PRINT*"), None);
     }
 
     #[test]
-    fn pending_print_check_detects_blank_and_print_values() {
-        assert!(import_payment_with_check_number("").is_pending_print_check());
-        assert!(import_payment_with_check_number(" Print ").is_pending_print_check());
-    }
-
-    #[test]
-    fn pending_print_check_leaves_numbered_checks_processed() {
-        assert!(!import_payment_with_check_number("123456").is_pending_print_check());
+    fn real_check_numbers_pass_through() {
+        assert_eq!(
+            normalize_tmo_check_number("123456"),
+            Some("123456".to_string())
+        );
+        assert_eq!(
+            normalize_tmo_check_number("  789  "),
+            Some("789".to_string())
+        );
     }
 }
 

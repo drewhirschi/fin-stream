@@ -274,7 +274,7 @@ async fn run_migrations(pool: &PgPool) -> anyhow::Result<()> {
             loan_account               TEXT NOT NULL,
             borrower_name              TEXT NOT NULL,
             property_name              TEXT NOT NULL,
-            check_number               TEXT NOT NULL,
+            check_number               TEXT,
             check_date                 DATE NOT NULL,
             amount                     DOUBLE PRECISION NOT NULL,
             service_fee                DOUBLE PRECISION NOT NULL,
@@ -684,6 +684,22 @@ async fn run_migrations(pool: &PgPool) -> anyhow::Result<()> {
         "ALTER TABLE intg.tmo_import_payment
          ALTER COLUMN check_date TYPE DATE
          USING split_part(check_date::text, 'T', 1)::date",
+    )
+    .execute(pool)
+    .await?;
+
+    // check_number is NULL when TMO hasn't issued a real check yet
+    // (placeholder values like "Print", "Print Check", or blank).
+    sqlx::query(
+        "ALTER TABLE intg.tmo_import_payment ALTER COLUMN check_number DROP NOT NULL",
+    )
+    .execute(pool)
+    .await?;
+    sqlx::query(
+        "UPDATE intg.tmo_import_payment
+            SET check_number = NULL
+          WHERE check_number IS NOT NULL
+            AND (btrim(check_number) = '' OR check_number ILIKE '%print%')",
     )
     .execute(pool)
     .await?;
