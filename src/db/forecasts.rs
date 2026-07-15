@@ -18,6 +18,8 @@ pub struct ForecastRow {
     pub account_name: Option<String>,
     pub amount: f64,
     pub status: String,
+    pub direction: String,
+    pub amount_certainty: String,
     pub source_type: Option<String>,
     pub metadata: Option<String>,
 }
@@ -46,6 +48,8 @@ pub struct ForecastRowWithBalance {
     pub amount: f64,
     pub running_balance: f64,
     pub status: String,
+    pub direction: String,
+    pub amount_certainty: String,
     pub source_type: Option<String>,
     pub metadata: Option<String>,
     /// Derived from dates — true iff the event was expected in the past and
@@ -123,12 +127,15 @@ pub async fn get_forecast_events(
                 a.name as account_name,
                 e.amount,
                 e.status,
+                COALESCE(s.direction, 'in') as direction,
+                COALESCE(s.amount_certainty, 'known') as amount_certainty,
                 e.source_type,
                 e.metadata
          FROM stream_event e
          JOIN stream s ON e.stream_id = s.id
          LEFT JOIN account a ON a.id = COALESCE(e.account_id, s.default_account_id)
          WHERE e.expected_date BETWEEN $1::date AND $2::date
+           AND s.is_active = 1
            AND ($3::bigint IS NULL OR e.stream_id = $3)
            AND (
                 $4::bigint IS NULL
@@ -168,15 +175,54 @@ pub async fn compute_forecast(
 
     let today = chrono::Utc::now().date_naive();
 
+    // Amounts are stored as magnitudes; the sign comes from the stream direction.
+    let signed: Vec<f64> = events
+        .iter()
+        .map(|event| {
+            if event.direction == "out" {
+                -event.amount.abs()
+            } else {
+                event.amount.abs()
+            }
+        })
+        .collect();
+    let days: Vec<chrono::NaiveDate> = events
+        .iter()
+        .map(|event| {
+            chrono::NaiveDate::parse_from_str(&event.expected_date, "%Y-%m-%d").unwrap_or(today)
+        })
+        .collect();
+
+    // Anchor the running balance at *today*: starting_balance is cash on hand
+    // now. Future events accumulate forward; past events are reconstructed
+    // backward, so the balance reads correctly on any day in the window.
+    let n = events.len();
+    let mut running_balances = vec![starting_balance; n];
+
     let mut running = starting_balance;
+    for i in 0..n {
+        if days[i] > today {
+            running += signed[i];
+            running_balances[i] = running;
+        }
+    }
+
+    let mut running = starting_balance;
+    for i in (0..n).rev() {
+        if days[i] <= today {
+            running_balances[i] = running;
+            running -= signed[i];
+        }
+    }
+
+    let ending_balance = running_balances.last().copied().unwrap_or(starting_balance);
+
     let rows = events
         .into_iter()
-        .map(|event| {
-            running += event.amount;
+        .enumerate()
+        .map(|(i, event)| {
             let is_late = event.actual_date.is_none()
-                && chrono::NaiveDate::parse_from_str(&event.expected_date, "%Y-%m-%d")
-                    .map(|d| d < today)
-                    .unwrap_or(false)
+                && days[i] < today
                 && matches!(event.status.as_str(), "projected" | "confirmed");
             ForecastRowWithBalance {
                 event_id: event.event_id,
@@ -188,9 +234,11 @@ pub async fn compute_forecast(
                 label: event.label,
                 stream_name: event.stream_name,
                 account_name: event.account_name,
-                amount: event.amount,
-                running_balance: running,
+                amount: signed[i],
+                running_balance: running_balances[i],
                 status: event.status,
+                direction: event.direction,
+                amount_certainty: event.amount_certainty,
                 source_type: event.source_type,
                 metadata: event.metadata,
                 is_late,
@@ -202,6 +250,6 @@ pub async fn compute_forecast(
         starting_balance,
         cash_source,
         rows,
-        ending_balance: running,
+        ending_balance,
     }))
 }

@@ -163,6 +163,45 @@ async fn run_migrations(pool: &PgPool) -> anyhow::Result<()> {
         .execute(pool)
         .await?;
 
+    // ── Streams iteration one: first-class direction + amount certainty ──
+    // A stream now flows IN or OUT; amounts are stored as magnitudes and the
+    // sign is applied from `direction` at compute time. `amount_certainty`
+    // marks whether the amount is known (salary/rent) or estimated (cards).
+    sqlx::query("ALTER TABLE stream ADD COLUMN IF NOT EXISTS direction TEXT")
+        .execute(pool)
+        .await?;
+    sqlx::query("ALTER TABLE stream ADD COLUMN IF NOT EXISTS amount_certainty TEXT")
+        .execute(pool)
+        .await?;
+    // Backfill direction from kind/type: expenses + credit cards flow OUT,
+    // everything else flows IN.
+    sqlx::query(
+        "UPDATE stream
+            SET direction = CASE
+                WHEN kind IN ('manual_expense', 'credit_card')
+                  OR type IN ('manual_expense', 'credit_card_due') THEN 'out'
+                ELSE 'in'
+            END
+          WHERE direction IS NULL OR direction = ''",
+    )
+    .execute(pool)
+    .await?;
+    // Backfill amount certainty: credit cards are estimated, everything else known.
+    sqlx::query(
+        "UPDATE stream
+            SET amount_certainty = CASE WHEN kind = 'credit_card' THEN 'estimated' ELSE 'known' END
+          WHERE amount_certainty IS NULL OR amount_certainty = ''",
+    )
+    .execute(pool)
+    .await?;
+    // Amounts are magnitudes now; normalize any legacy signed rows once.
+    sqlx::query("UPDATE stream_event SET amount = ABS(amount) WHERE amount < 0")
+        .execute(pool)
+        .await?;
+    sqlx::query("UPDATE stream_schedule SET amount = ABS(amount) WHERE amount < 0")
+        .execute(pool)
+        .await?;
+
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS intg.integration_connection (
             id              BIGSERIAL PRIMARY KEY,

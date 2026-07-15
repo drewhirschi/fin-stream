@@ -15,11 +15,12 @@ pub fn router() -> Router<Arc<AppState>> {
     Router::new()
         .route("/api/forecast", get(get_forecast))
         .route("/api/events", post(create_event))
-        .route("/api/events/{id}", patch(update_event))
+        .route("/api/events/{id}", patch(update_event).delete(delete_event))
+        .route("/api/events/{id}/reconcile", post(reconcile_event))
         .route("/api/accounts", post(create_account))
         .route("/api/accounts/{id}", patch(update_account))
         .route("/api/streams", post(create_stream))
-        .route("/api/streams/{id}", patch(update_stream))
+        .route("/api/streams/{id}", patch(update_stream).delete(delete_stream))
         .route("/api/views", post(create_view))
         .route("/api/views/{id}", patch(update_view))
         .route("/api/settings/cash", post(set_cash_balance))
@@ -310,6 +311,74 @@ async fn update_event(
     }
 }
 
+async fn delete_event(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<i64>,
+) -> impl IntoResponse {
+    match db::events::delete_event(&state.db, id).await {
+        Ok(true) => Json(serde_json::json!({"ok": true})).into_response(),
+        Ok(false) => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({"error": "not_found", "message": "Event not found."})),
+        )
+            .into_response(),
+        Err(e) => {
+            tracing::error!("failed to delete event {id}: {e}");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": "internal", "message": "Failed to delete event."})),
+            )
+                .into_response()
+        }
+    }
+}
+
+#[derive(Deserialize)]
+struct ReconcileRequest {
+    actual_date: String,
+    amount: f64,
+}
+
+/// Mark an expected event as landed: stamp the real date + amount and move it
+/// onto that date. The manual half of the reconciliation loop.
+async fn reconcile_event(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<i64>,
+    Json(req): Json<ReconcileRequest>,
+) -> impl IntoResponse {
+    if chrono::NaiveDate::parse_from_str(&req.actual_date, "%Y-%m-%d").is_err() {
+        return (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(serde_json::json!({"error": "validation_error", "message": "Invalid date format. Use YYYY-MM-DD."})),
+        )
+            .into_response();
+    }
+    if req.amount == 0.0 {
+        return (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(serde_json::json!({"error": "validation_error", "message": "Amount cannot be zero."})),
+        )
+            .into_response();
+    }
+
+    match db::events::reconcile_event(&state.db, id, &req.actual_date, req.amount).await {
+        Ok(true) => Json(serde_json::json!({"ok": true})).into_response(),
+        Ok(false) => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({"error": "not_found", "message": "Event not found."})),
+        )
+            .into_response(),
+        Err(e) => {
+            tracing::error!("failed to reconcile event {id}: {e}");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": "internal", "message": "Failed to reconcile event."})),
+            )
+                .into_response()
+        }
+    }
+}
+
 #[derive(Deserialize)]
 struct AccountRequest {
     name: String,
@@ -358,6 +427,7 @@ async fn create_account(
 struct StreamRequest {
     name: String,
     kind: Option<String>,
+    amount_certainty: Option<String>,
     description: Option<String>,
     default_account_id: Option<i64>,
     schedule_amount: Option<f64>,
@@ -465,6 +535,7 @@ async fn create_stream(
         &state.db,
         &req.name,
         req.kind.as_deref().unwrap_or("manual"),
+        req.amount_certainty.as_deref(),
         req.description.as_deref(),
         req.default_account_id,
         req.schedule_amount,
@@ -506,6 +577,7 @@ async fn update_stream(
         id,
         &req.name,
         req.kind.as_deref().unwrap_or("manual"),
+        req.amount_certainty.as_deref(),
         req.description.as_deref(),
         req.default_account_id,
         req.schedule_amount,
@@ -528,6 +600,28 @@ async fn update_stream(
                 Json(
                     serde_json::json!({"error": "internal", "message": "Failed to update stream."}),
                 ),
+            )
+                .into_response()
+        }
+    }
+}
+
+async fn delete_stream(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<i64>,
+) -> impl IntoResponse {
+    match db::streams::delete_stream(&state.db, id).await {
+        Ok(true) => Json(serde_json::json!({"ok": true})).into_response(),
+        Ok(false) => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({"error": "not_found", "message": "Stream not found."})),
+        )
+            .into_response(),
+        Err(e) => {
+            tracing::error!("failed to delete stream {id}: {e}");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": "internal", "message": "Failed to delete stream."})),
             )
                 .into_response()
         }

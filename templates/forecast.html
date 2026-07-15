@@ -55,6 +55,17 @@
                 </div>
                 <div class="label-dim" x-text="forecast?.cash_source?.detail || 'Using your saved current cash balance.'"></div>
                 <div class="label-dim" x-cloak x-show="forecast?.cash_source?.updated_at" x-text="'Updated ' + (forecast?.cash_source?.updated_at || '')"></div>
+                <div class="flex flex-wrap gap-2 items-end">
+                    <label class="flex flex-col gap-1">
+                        <span class="label-dim">Set cash on hand today</span>
+                        <input type="number" step="0.01" class="input input-sm bg-base-100 mono" style="width: 11rem"
+                               x-model="cashInput" placeholder="e.g. 5000.00">
+                    </label>
+                    <button class="emerald-pulse px-4 py-2 rounded-lg font-semibold text-sm cursor-pointer"
+                            @click="setCashBalance()">
+                        Save
+                    </button>
+                </div>
                 <div class="flex flex-wrap gap-2">
                     <button class="emerald-pulse px-4 py-2 rounded-lg font-semibold text-sm cursor-pointer"
                             @click="syncMonarchBalance()">
@@ -185,7 +196,7 @@
                                     </div>
                                 </div>
                                 <div class="mono" :style="event.amount >= 0 ? 'color: var(--vault-primary)' : 'color: var(--vault-secondary)'"
-                                     x-text="currency(event.amount)"></div>
+                                     x-text="currency(event.amount) + (event.amount_certainty === 'estimated' ? ' est' : '')"></div>
                             </div>
                         </button>
                     </template>
@@ -228,8 +239,8 @@
 
                     <div class="grid gap-3 md:grid-cols-2">
                         <label class="flex flex-col gap-1">
-                            <span class="label-dim">Amount</span>
-                            <input class="input input-sm bg-base-100 mono" type="number" step="0.01" x-model="composer.amount" placeholder="-125.00">
+                            <span class="label-dim">Amount (positive)</span>
+                            <input class="input input-sm bg-base-100 mono" type="number" step="0.01" min="0" x-model="composer.amount" placeholder="125.00">
                         </label>
                         <label class="flex flex-col gap-1">
                             <span class="label-dim" x-text="editingEvent ? 'Expected date' : 'Scheduled date'"></span>
@@ -237,17 +248,27 @@
                         </label>
                     </div>
 
-                    <div class="flex gap-2 pt-2">
+                    <div class="flex flex-wrap gap-2 pt-2">
                         <button class="emerald-pulse px-4 py-2 rounded-lg font-semibold text-sm cursor-pointer"
                                 @click="saveComposer()"
                                 :disabled="composerSaving">
                             <span x-cloak x-show="!composerSaving" x-text="editingEvent ? 'Save Event' : 'Create Event'"></span>
                             <span x-cloak x-show="composerSaving">Saving...</span>
                         </button>
+                        <button class="px-4 py-2 rounded-lg text-sm cursor-pointer" x-cloak x-show="editingEvent"
+                                style="background: var(--vault-surface-container-high); color: var(--vault-primary)"
+                                @click="markLanded()" :disabled="composerSaving">
+                            Mark landed
+                        </button>
                         <button class="px-4 py-2 rounded-lg text-sm cursor-pointer"
                                 style="background: var(--vault-surface-container-high); color: var(--vault-on-surface)"
                                 @click="resetComposer()">
                             Reset
+                        </button>
+                        <button class="px-4 py-2 rounded-lg text-sm cursor-pointer" x-cloak x-show="editingEvent"
+                                style="background: var(--vault-surface-container-high); color: var(--vault-secondary)"
+                                @click="deleteEvent()" :disabled="composerSaving">
+                            Delete
                         </button>
                     </div>
                     <div class="label-dim" style="color: var(--vault-secondary)" x-cloak x-show="composerError" x-text="composerError"></div>
@@ -274,7 +295,7 @@
                             <td x-text="row.label || 'Untitled event'"></td>
                             <td x-text="row.stream_name || '-'"></td>
                             <td class="mono" :style="row.amount >= 0 ? 'color: var(--vault-primary)' : 'color: var(--vault-secondary)'"
-                                x-text="currency(row.amount)"></td>
+                                x-text="currency(row.amount) + (row.amount_certainty === 'estimated' ? ' est' : '')"></td>
                             <td class="mono" x-text="currency(row.running_balance)"></td>
                             <td class="label-dim" x-text="row.status"></td>
                         </tr>
@@ -523,7 +544,7 @@ function timelineApp() {
                 label: event.label || '',
                 stream_id: String(event.stream_id),
                 account_id: event.account_id ? String(event.account_id) : '',
-                amount: String(event.amount),
+                amount: String(Math.abs(event.amount)),
                 date: event.date,
             };
             this.composerError = null;
@@ -586,6 +607,52 @@ function timelineApp() {
                 this.composerSaving = false;
             }
         },
+        async markLanded() {
+            if (!this.editingEvent) return;
+            const amount = Number(this.composer.amount);
+            if (!Number.isFinite(amount) || amount === 0) {
+                this.composerError = 'Enter the amount that actually landed.';
+                return;
+            }
+            this.composerSaving = true;
+            this.composerError = null;
+            try {
+                const res = await fetch(`/api/events/${this.editingEvent.event_id}/reconcile`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ actual_date: this.composer.date, amount }),
+                });
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    throw new Error(err.message || 'Failed to mark landed.');
+                }
+                await this.fetchForecast();
+                this.openComposer();
+            } catch (err) {
+                this.composerError = err.message || 'Failed to mark landed.';
+            } finally {
+                this.composerSaving = false;
+            }
+        },
+        async deleteEvent() {
+            if (!this.editingEvent) return;
+            if (!confirm('Delete this event?')) return;
+            this.composerSaving = true;
+            this.composerError = null;
+            try {
+                const res = await fetch(`/api/events/${this.editingEvent.event_id}`, { method: 'DELETE' });
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    throw new Error(err.message || 'Failed to delete event.');
+                }
+                await this.fetchForecast();
+                this.openComposer();
+            } catch (err) {
+                this.composerError = err.message || 'Failed to delete event.';
+            } finally {
+                this.composerSaving = false;
+            }
+        },
         async setCashBalance() {
             const amount = Number(this.cashInput);
             if (!Number.isFinite(amount)) return;
@@ -625,6 +692,9 @@ function timelineApp() {
                     throw new Error(err.message || 'Failed to load timeline.');
                 }
                 this.forecast = await res.json();
+                if (this.cashInput === '') {
+                    this.cashInput = String(this.forecast?.cash_source?.amount ?? this.forecast?.starting_balance ?? '');
+                }
             } catch (err) {
                 this.error = err.message || 'Could not load timeline.';
             } finally {

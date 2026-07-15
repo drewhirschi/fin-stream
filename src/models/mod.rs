@@ -103,6 +103,8 @@ pub struct StreamConfigView {
     #[sqlx(rename = "type")]
     pub stream_type: String,
     pub kind: String,
+    pub direction: Option<String>,
+    pub amount_certainty: Option<String>,
     pub description: Option<String>,
     pub is_active: i32,
     pub default_account_id: i64,

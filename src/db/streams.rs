@@ -7,6 +7,27 @@ use crate::models::{StreamConfigView, StreamViewEditor, StreamViewMember, Stream
 
 const DEFAULT_HORIZON_DAYS: i64 = 365;
 
+const SUPPORTED_FREQUENCIES: [&str; 6] =
+    ["monthly", "semimonthly", "biweekly", "weekly", "annual", "one_time"];
+
+/// Money flows OUT for expenses and credit-card payments, IN for everything
+/// else. Direction is derived from the stream kind so the forecast can sign
+/// amounts at compute time (amounts are always stored as magnitudes).
+fn direction_for_kind(kind: &str) -> &'static str {
+    match kind {
+        "manual_expense" | "credit_card" => "out",
+        _ => "in",
+    }
+}
+
+/// Credit cards are estimated by default; everything else is a known amount.
+fn certainty_default_for_kind(kind: &str) -> &'static str {
+    match kind {
+        "credit_card" => "estimated",
+        _ => "known",
+    }
+}
+
 pub async fn ensure_default_configuration(pool: &PgPool) -> anyhow::Result<()> {
     let primary_account_id = accounts::ensure_primary_account(pool).await?;
     let trust_stream_id = ensure_stream(
@@ -147,15 +168,19 @@ async fn ensure_stream(
              SET name = $1,
                  type = $2,
                  kind = $3,
-                 description = $4,
-                 default_account_id = $5,
+                 direction = $4,
+                 amount_certainty = COALESCE(amount_certainty, $5),
+                 description = $6,
+                 default_account_id = $7,
                  is_active = 1,
                  updated_at = TO_CHAR(NOW() AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"')
-             WHERE id = $6",
+             WHERE id = $8",
         )
         .bind(name)
         .bind(stream_type)
         .bind(kind)
+        .bind(direction_for_kind(kind))
+        .bind(certainty_default_for_kind(kind))
         .bind(description)
         .bind(default_account_id)
         .bind(id)
@@ -166,14 +191,16 @@ async fn ensure_stream(
 
     let (id,): (i64,) = sqlx::query_as(
         "INSERT INTO stream (
-            name, type, kind, description, default_account_id, is_active
+            name, type, kind, direction, amount_certainty, description, default_account_id, is_active
          ) VALUES (
-            $1, $2, $3, $4, $5, 1
+            $1, $2, $3, $4, $5, $6, $7, 1
          ) RETURNING id",
     )
     .bind(name)
     .bind(stream_type)
     .bind(kind)
+    .bind(direction_for_kind(kind))
+    .bind(certainty_default_for_kind(kind))
     .bind(description)
     .bind(default_account_id)
     .fetch_one(pool)
@@ -250,10 +277,37 @@ async fn ensure_monthly_schedule(
     start_date: &str,
     account_id: Option<i64>,
 ) -> anyhow::Result<i64> {
+    ensure_schedule(
+        pool,
+        stream_id,
+        label,
+        amount,
+        "monthly",
+        Some(due_day),
+        start_date,
+        account_id,
+    )
+    .await
+}
+
+/// Upsert the single active schedule for a stream with any supported frequency.
+/// Reuses the first existing schedule row, so switching frequency is lossless.
+/// Amounts are stored as magnitudes (sign comes from the stream direction).
+async fn ensure_schedule(
+    pool: &PgPool,
+    stream_id: i64,
+    label: &str,
+    amount: f64,
+    frequency: &str,
+    day_of_month: Option<i32>,
+    start_date: &str,
+    account_id: Option<i64>,
+) -> anyhow::Result<i64> {
+    let amount = amount.abs();
     let existing: Option<(i64,)> = sqlx::query_as(
         "SELECT id
          FROM stream_schedule
-         WHERE stream_id = $1 AND frequency = 'monthly'
+         WHERE stream_id = $1
          ORDER BY id ASC
          LIMIT 1",
     )
@@ -266,16 +320,18 @@ async fn ensure_monthly_schedule(
             "UPDATE stream_schedule
              SET label = $1,
                  amount = $2,
-                 day_of_month = $3,
-                 start_date = $4::date,
-                 account_id = $5,
+                 frequency = $3,
+                 day_of_month = $4,
+                 start_date = $5::date,
+                 account_id = $6,
                  is_active = 1,
                  updated_at = TO_CHAR(NOW() AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"')
-             WHERE id = $6",
+             WHERE id = $7",
         )
         .bind(label)
         .bind(amount)
-        .bind(due_day)
+        .bind(frequency)
+        .bind(day_of_month)
         .bind(start_date)
         .bind(account_id)
         .bind(id)
@@ -288,13 +344,14 @@ async fn ensure_monthly_schedule(
         "INSERT INTO stream_schedule (
             stream_id, label, amount, frequency, day_of_month, start_date, account_id, is_active
          ) VALUES (
-            $1, $2, $3, 'monthly', $4, $5::date, $6, 1
+            $1, $2, $3, $4, $5, $6::date, $7, 1
          ) RETURNING id",
     )
     .bind(stream_id)
     .bind(label)
     .bind(amount)
-    .bind(due_day)
+    .bind(frequency)
+    .bind(day_of_month)
     .bind(start_date)
     .bind(account_id)
     .fetch_one(pool)
@@ -347,7 +404,7 @@ pub async fn refresh_stream_schedule_events(pool: &PgPool) -> anyhow::Result<()>
     let horizon = today + chrono::Duration::days(DEFAULT_HORIZON_DAYS);
 
     for schedule in schedules {
-        if schedule.frequency != "monthly" {
+        if !SUPPORTED_FREQUENCIES.contains(&schedule.frequency.as_str()) {
             continue;
         }
 
@@ -360,9 +417,15 @@ pub async fn refresh_stream_schedule_events(pool: &PgPool) -> anyhow::Result<()>
             .unwrap_or(horizon)
             .min(horizon);
 
-        for occurrence in
-            monthly_occurrences(effective_start, end, schedule.day_of_month.unwrap_or(1))
-        {
+        let occurrences = schedule_occurrences(
+            &schedule.frequency,
+            start,
+            effective_start,
+            end,
+            schedule.day_of_month,
+        );
+
+        for occurrence in occurrences {
             let label = schedule
                 .label
                 .clone()
@@ -432,9 +495,97 @@ fn last_day_of_month(date: NaiveDate) -> NaiveDate {
     first_of_next_month - chrono::Duration::days(1)
 }
 
+/// Expand a schedule into concrete dates within [effective_start, end].
+/// `start` is the schedule's anchor (used for cadence alignment), while
+/// `effective_start` is `max(start, today)` so we never project the past.
+fn schedule_occurrences(
+    frequency: &str,
+    start: NaiveDate,
+    effective_start: NaiveDate,
+    end: NaiveDate,
+    day_of_month: Option<i32>,
+) -> Vec<NaiveDate> {
+    match frequency {
+        "monthly" => monthly_occurrences(effective_start, end, day_of_month.unwrap_or(1)),
+        "weekly" => step_occurrences(start, effective_start, end, 7),
+        "biweekly" => step_occurrences(start, effective_start, end, 14),
+        "semimonthly" => semimonthly_occurrences(effective_start, end),
+        "annual" => annual_occurrences(start, effective_start, end),
+        "one_time" => {
+            if start >= effective_start && start <= end {
+                vec![start]
+            } else {
+                Vec::new()
+            }
+        }
+        _ => Vec::new(),
+    }
+}
+
+/// Fixed-cadence dates (weekly/biweekly) aligned to `anchor`, kept within range.
+fn step_occurrences(
+    anchor: NaiveDate,
+    effective_start: NaiveDate,
+    end: NaiveDate,
+    step_days: i64,
+) -> Vec<NaiveDate> {
+    let step = chrono::Duration::days(step_days.max(1));
+    let mut cursor = anchor;
+    while cursor < effective_start {
+        cursor = cursor + step;
+    }
+    let mut dates = Vec::new();
+    while cursor <= end {
+        dates.push(cursor);
+        cursor = cursor + step;
+    }
+    dates
+}
+
+/// The 15th and the last day of each month within range (classic paycheck).
+fn semimonthly_occurrences(effective_start: NaiveDate, end: NaiveDate) -> Vec<NaiveDate> {
+    let mut cursor = effective_start.with_day(1).unwrap_or(effective_start);
+    let mut dates = Vec::new();
+    while cursor <= end {
+        let mid = cursor.with_day(15).unwrap_or(cursor);
+        let last = last_day_of_month(cursor);
+        for candidate in [mid, last] {
+            if candidate >= effective_start && candidate <= end {
+                dates.push(candidate);
+            }
+        }
+        cursor = cursor
+            .checked_add_months(Months::new(1))
+            .unwrap_or(end + chrono::Duration::days(1));
+    }
+    dates
+}
+
+/// The anchor's month/day, once per year within range (taxes, insurance).
+fn annual_occurrences(
+    anchor: NaiveDate,
+    effective_start: NaiveDate,
+    end: NaiveDate,
+) -> Vec<NaiveDate> {
+    let month = anchor.month();
+    let day = anchor.day();
+    let mut dates = Vec::new();
+    for year in effective_start.year()..=end.year() {
+        let candidate = NaiveDate::from_ymd_opt(year, month, day).unwrap_or_else(|| {
+            let first = NaiveDate::from_ymd_opt(year, month, 1).unwrap_or(anchor);
+            last_day_of_month(first)
+        });
+        if candidate >= effective_start && candidate <= end {
+            dates.push(candidate);
+        }
+    }
+    dates
+}
+
 pub async fn list_streams(pool: &PgPool) -> Vec<StreamConfigView> {
     sqlx::query_as(
-        "SELECT s.id, s.name, s.type, COALESCE(s.kind, 'manual') as kind, s.description, s.is_active,
+        "SELECT s.id, s.name, s.type, COALESCE(s.kind, 'manual') as kind,
+                s.direction, s.amount_certainty, s.description, s.is_active,
                 COALESCE(s.default_account_id, 0) as default_account_id, a.name as default_account_name,
                 ss.id as schedule_id, ss.label as schedule_label, ss.amount as schedule_amount,
                 ss.frequency as schedule_frequency, ss.day_of_month as due_day,
@@ -540,6 +691,7 @@ pub async fn create_stream(
     pool: &PgPool,
     name: &str,
     kind: &str,
+    amount_certainty: Option<&str>,
     description: Option<&str>,
     default_account_id: Option<i64>,
     schedule_amount: Option<f64>,
@@ -547,6 +699,7 @@ pub async fn create_stream(
     due_day: Option<i32>,
     start_date: Option<&str>,
 ) -> anyhow::Result<i64> {
+    let kind = kind.trim();
     let stream_type = match kind {
         "manual_income" => "manual_income",
         "manual_expense" => "manual_expense",
@@ -554,17 +707,23 @@ pub async fn create_stream(
         "tmo_trust" => "mortgage_portfolio",
         _ => "manual",
     };
+    let certainty = amount_certainty
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| certainty_default_for_kind(kind));
 
     let (stream_id,): (i64,) = sqlx::query_as(
         "INSERT INTO stream (
-            name, type, kind, description, default_account_id, is_active
+            name, type, kind, direction, amount_certainty, description, default_account_id, is_active
          ) VALUES (
-            $1, $2, $3, $4, $5, 1
+            $1, $2, $3, $4, $5, $6, $7, 1
          ) RETURNING id",
     )
     .bind(name.trim())
     .bind(stream_type)
-    .bind(kind.trim())
+    .bind(kind)
+    .bind(direction_for_kind(kind))
+    .bind(certainty)
     .bind(description.map(str::trim).filter(|value| !value.is_empty()))
     .bind(default_account_id)
     .fetch_one(pool)
@@ -604,6 +763,7 @@ pub async fn update_stream(
     stream_id: i64,
     name: &str,
     kind: &str,
+    amount_certainty: Option<&str>,
     description: Option<&str>,
     default_account_id: Option<i64>,
     schedule_amount: Option<f64>,
@@ -611,6 +771,7 @@ pub async fn update_stream(
     due_day: Option<i32>,
     start_date: Option<&str>,
 ) -> anyhow::Result<bool> {
+    let kind = kind.trim();
     let stream_type = match kind {
         "manual_income" => "manual_income",
         "manual_expense" => "manual_expense",
@@ -618,20 +779,28 @@ pub async fn update_stream(
         "tmo_trust" => "mortgage_portfolio",
         _ => "manual",
     };
+    let certainty = amount_certainty
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| certainty_default_for_kind(kind));
 
     let result = sqlx::query(
         "UPDATE stream
          SET name = $1,
              type = $2,
              kind = $3,
-             description = $4,
-             default_account_id = $5,
+             direction = $4,
+             amount_certainty = $5,
+             description = $6,
+             default_account_id = $7,
              updated_at = TO_CHAR(NOW() AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"')
-         WHERE id = $6",
+         WHERE id = $8",
     )
     .bind(name.trim())
     .bind(stream_type)
-    .bind(kind.trim())
+    .bind(kind)
+    .bind(direction_for_kind(kind))
+    .bind(certainty)
     .bind(description.map(str::trim).filter(|value| !value.is_empty()))
     .bind(default_account_id)
     .bind(stream_id)
@@ -683,8 +852,8 @@ async fn upsert_schedule(
     let frequency = schedule_frequency
         .map(str::trim)
         .filter(|value| !value.is_empty());
-    match (frequency, due_day) {
-        (Some("monthly"), Some(due_day)) => {
+    match frequency {
+        Some(freq) if SUPPORTED_FREQUENCIES.contains(&freq) => {
             let label = fallback_label
                 .map(|value| format!("{value} due"))
                 .unwrap_or_else(|| "Scheduled".to_string());
@@ -692,19 +861,21 @@ async fn upsert_schedule(
                 .map(str::trim)
                 .filter(|value| !value.is_empty())
                 .map(str::to_string)
-                .unwrap_or_else(|| {
-                    Utc::now()
-                        .date_naive()
-                        .with_day(1)
-                        .unwrap_or_else(|| Utc::now().date_naive())
-                        .to_string()
-                });
-            ensure_monthly_schedule(
+                .unwrap_or_else(|| Utc::now().date_naive().to_string());
+            // Monthly anchors on a day-of-month (default the 1st if unset);
+            // the other frequencies anchor on start_date instead.
+            let day_of_month = if freq == "monthly" {
+                Some(due_day.unwrap_or(1))
+            } else {
+                due_day
+            };
+            ensure_schedule(
                 pool,
                 stream_id,
                 &label,
                 amount,
-                due_day,
+                freq,
+                day_of_month,
                 &start_date,
                 account_id,
             )
@@ -827,4 +998,42 @@ pub async fn view_exists(pool: &PgPool, id: i64) -> anyhow::Result<bool> {
     .context("checking view existence")?;
 
     Ok(exists.is_some())
+}
+
+/// Soft-delete a stream: deactivate it + its schedules and drop future
+/// projections. Past actuals are hidden by the forecast's is_active filter.
+pub async fn delete_stream(pool: &PgPool, stream_id: i64) -> anyhow::Result<bool> {
+    let result = sqlx::query(
+        "UPDATE stream
+         SET is_active = 0,
+             updated_at = TO_CHAR(NOW() AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"')
+         WHERE id = $1 AND is_active = 1",
+    )
+    .bind(stream_id)
+    .execute(pool)
+    .await?;
+
+    if result.rows_affected() == 0 {
+        return Ok(false);
+    }
+
+    sqlx::query(
+        "UPDATE stream_schedule
+         SET is_active = 0,
+             updated_at = TO_CHAR(NOW() AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"')
+         WHERE stream_id = $1",
+    )
+    .bind(stream_id)
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        "DELETE FROM stream_event
+         WHERE stream_id = $1 AND status = 'projected' AND actual_date IS NULL",
+    )
+    .bind(stream_id)
+    .execute(pool)
+    .await?;
+
+    Ok(true)
 }

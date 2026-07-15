@@ -46,7 +46,7 @@ pub async fn create_event(
     .bind(account_id)
     .bind(label)
     .bind(expected_date)
-    .bind(amount)
+    .bind(amount.abs())
     .bind(status)
     .bind(&source_id)
     .bind(source_type)
@@ -84,9 +84,51 @@ pub async fn update_event(
          WHERE id = $5 AND status NOT IN ('received')",
     )
     .bind(label)
-    .bind(amount)
+    .bind(amount.map(f64::abs))
     .bind(expected_date)
     .bind(account_id)
+    .bind(event_id)
+    .execute(pool)
+    .await?;
+
+    Ok(result.rows_affected() > 0)
+}
+
+/// Hard-delete a single event (used for removing a mistaken manual entry).
+pub async fn delete_event(pool: &PgPool, event_id: i64) -> anyhow::Result<bool> {
+    let result = sqlx::query("DELETE FROM stream_event WHERE id = $1")
+        .bind(event_id)
+        .execute(pool)
+        .await?;
+
+    Ok(result.rows_affected() > 0)
+}
+
+/// Reconcile an expected event against reality: stamp the actual date + amount,
+/// move it onto that date, and mark it received. This is the manual half of the
+/// "expected vs actual" loop.
+pub async fn reconcile_event(
+    pool: &PgPool,
+    event_id: i64,
+    actual_date: &str,
+    amount: f64,
+) -> anyhow::Result<bool> {
+    let result = sqlx::query(
+        "UPDATE stream_event
+         SET actual_date = $1::date,
+             expected_date = $1::date,
+             amount = $2,
+             status = 'received',
+             metadata = CASE
+                WHEN metadata IS NULL OR metadata = ''
+                    THEN jsonb_build_object('reconciled', true)::text
+                ELSE jsonb_set(metadata::jsonb, '{reconciled}', 'true'::jsonb)::text
+             END,
+             updated_at = TO_CHAR(NOW() AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"')
+         WHERE id = $3",
+    )
+    .bind(actual_date)
+    .bind(amount.abs())
     .bind(event_id)
     .execute(pool)
     .await?;
