@@ -1,0 +1,31 @@
+[package]
+name = "trust-deeds-object-cutover"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+publish = false
+
+# Deliberately standalone. This tool must never be added to the application
+# workspace or Vercel build graph.
+
+[dependencies]
+async-trait = "0.1"
+bytes = "1"
+chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
+clap = { version = "4", features = ["derive"] }
+futures = "0.3"
+hex = "0.4"
+mime_guess = "2"
+object_store = { version = "0.12", default-features = false, features = ["aws"] }
+rusqlite = { version = "0.31", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+tempfile = "3"
+thiserror = "2"
+tokio = { version = "1", features = ["fs", "macros", "rt-multi-thread"] }
+url = "2"
+walkdir = "2"
+
+[dev-dependencies]
+tempfile = "3"

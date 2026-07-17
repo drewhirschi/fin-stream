@@ -1,0 +1,47 @@
+{% extends "integration_base.html" %}
+
+{% block integration_breadcrumb_suffix %}<span class="label-dim">/</span><span>Payments</span>{% endblock %}
+
+{% block integration_page_content %}
+<div class="card bg-base-100 shadow-sm border border-base-300">
+    <div class="card-body p-3 sm:p-5">
+        <div class="mb-6"><h2 class="card-title">Payments</h2><p class="label-dim mt-1 text-sm">Raw payment history imported from {{ connection.name }}.</p></div>
+        {% if payments.is_empty() %}
+        <div class="alert alert-info">No imported payment data yet.</div>
+        {% else %}
+        <div class="flex flex-col gap-3 md:hidden">
+            {% for payment in payments %}
+            <div class="card border shadow-sm {% if payment.check_number.is_none() %}bg-warning/10 border-warning/40{% else %}bg-base-100 border-base-300{% endif %}" x-data="{ open: false }">
+                <div class="card-body p-4 gap-2">
+                    <div class="flex items-start justify-between gap-3">
+                        <div><span class="text-sm label-dim">{{ payment.check_date|date }}</span>{% match payment.check_number %}{% when Some with (number) %}<span class="badge badge-success badge-sm mt-1 block">Processed · #{{ number }}</span>{% when None %}<span class="badge badge-warning badge-sm mt-1 block">Pending</span>{% endmatch %}</div>
+                        <div class="text-lg font-semibold whitespace-nowrap">${{ payment.amount|money }}</div>
+                    </div>
+                    <div class="flex flex-col"><span class="font-mono text-xs">{{ payment.loan_account }}</span><span class="text-sm truncate">{{ payment.borrower_name }}</span></div>
+                    <button type="button" class="btn btn-ghost btn-sm justify-start px-2" @click="open = !open"><span x-text="open ? 'Hide details' : 'Details'"></span></button>
+                    <div x-cloak x-show="open" class="grid grid-cols-3 gap-2 border-t border-base-300 pt-3 mt-1">
+                        <div><span class="label-dim text-xs block">Service fee</span><span class="text-sm">${{ payment.service_fee|money }}</span></div>
+                        <div><span class="label-dim text-xs block">Interest</span><span class="text-sm">${{ payment.interest|money }}</span></div>
+                        <div><span class="label-dim text-xs block">Principal</span><span class="text-sm">${{ payment.principal|money }}</span></div>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        <div class="overflow-x-auto hidden md:block">
+            <table class="table bg-base-100">
+                <thead><tr><th>Date</th><th>Loan</th><th>Check #</th><th>Amount</th><th>Service fee</th><th>Interest</th><th>Principal</th></tr></thead>
+                <tbody>{% for payment in payments %}
+                <tr class="{% if payment.check_number.is_none() %}bg-warning/10{% endif %}">
+                    <td>{{ payment.check_date|date }}</td>
+                    <td><div class="flex flex-col"><a class="link font-mono text-xs" href="/integrations/{{ connection.slug }}/loans/{{ payment.loan_account }}">{{ payment.loan_account }}</a><span class="text-xs label-dim truncate max-w-[24ch]">{{ payment.borrower_name }}</span></div></td>
+                    <td class="font-mono text-xs">{% match payment.check_number %}{% when Some with (number) %}{{ number }}{% when None %}<span class="badge badge-warning badge-sm font-sans">Pending</span>{% endmatch %}</td>
+                    <td>${{ payment.amount|money }}</td><td>${{ payment.service_fee|money }}</td><td>${{ payment.interest|money }}</td><td>${{ payment.principal|money }}</td>
+                </tr>
+                {% endfor %}</tbody>
+            </table>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

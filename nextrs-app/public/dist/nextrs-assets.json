@@ -1,0 +1,21 @@
+{
+  "entries": {
+    "__app_shell__": "/dist/__app_shell__-B4mVlDlV.js",
+    "canvas": "/dist/canvas-Dssa3KEs.js",
+    "forecast": "/dist/forecast-CS8WaPLN.js",
+    "inbox": "/dist/inbox-C4hlTQDA.js",
+    "inbox-_email_id_": "/dist/inbox-_email_id_-emkRqM1u.js",
+    "index": "/dist/index-EocDuFWF.js",
+    "integrations": "/dist/integrations-D79B0Q9M.js",
+    "integrations-_slug_": "/dist/integrations-_slug_-BU7G_QrC.js",
+    "integrations-_slug_-debug": "/dist/integrations-_slug_-debug-Dvlj-eYm.js",
+    "integrations-_slug_-loans": "/dist/integrations-_slug_-loans-D0h2JVTp.js",
+    "integrations-_slug_-loans-_loan_account_": "/dist/integrations-_slug_-loans-_loan_account_-DQheiSaS.js",
+    "integrations-_slug_-payments": "/dist/integrations-_slug_-payments-Dcagj1NH.js",
+    "integrations-_slug_-sync": "/dist/integrations-_slug_-sync-3Fr48bd7.js",
+    "login": "/dist/login-BBwLUVIe.js",
+    "not-found": "/dist/not-found-CSsK7kwD.js",
+    "streams": "/dist/streams-Cwjk4uc4.js"
+  },
+  "stylesheet": "/dist/style-51cafe9d6c48bc8e.css"
+}

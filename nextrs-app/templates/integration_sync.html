@@ -1,0 +1,70 @@
+{% extends "integration_base.html" %}
+
+{% block integration_breadcrumb_suffix %}<span class="label-dim">/</span><span>Sync</span>{% endblock %}
+
+{% block integration_page_content %}
+<div class="flex flex-col gap-6">
+    <div class="card bg-base-100 shadow-sm border border-base-300"><div class="card-body">
+        <div class="flex flex-wrap items-start justify-between gap-4">
+            <div><h2 class="card-title">Sync configuration</h2><p class="label-dim text-sm">The sync runs inline and records its claim and outcome in the database.</p></div>
+            <div class="flex items-center gap-3">
+                {% if control.mode.as_str() == "enabled" %}<span class="badge badge-success">Writes enabled</span>{% else %}<span class="badge badge-warning">Read only</span>{% endif %}
+                {% if connection.slug == "tmo" %}
+                <form hx-post="/integrations/{{ connection.slug }}/sync/run" hx-target="#sync-status" hx-swap="innerHTML" hx-disabled-elt="button">
+                    <button class="btn btn-primary btn-sm" type="submit" {% if control.mode.as_str() != "enabled" %}disabled{% endif %}>
+                        <span class="htmx-indicator loading loading-spinner loading-xs"></span>
+                        Sync now
+                    </button>
+                </form>
+                {% else %}
+                <a class="btn btn-primary btn-sm" href="/forecast">Refresh balance in Timeline</a>
+                {% endif %}
+            </div>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4 text-sm">
+            <div><div class="label-dim">Cadence</div><div id="sync-cadence-current" class="font-semibold">{{ connection.sync_cadence }}</div></div>
+            <div><div class="label-dim">Scheduler</div><div class="font-semibold">{% if control.scheduler_enabled %}Enabled{% else %}Disabled{% endif %}</div></div>
+            <div><div class="label-dim">Control updated</div><div class="font-semibold">{{ control.updated_at|datetime_local|safe }}</div></div>
+        </div>
+        {% match connection.next_scheduled_at %}{% when Some with (timestamp) %}<p class="label-dim text-xs mt-3">Next cadence slot: {{ timestamp|datetime_local|safe }}</p>{% when None %}{% endmatch %}
+        {% if connection.slug == "tmo" %}
+        <form class="flex flex-wrap items-end gap-3 mt-4"
+              hx-post="/integrations/{{ connection.slug }}/sync/cadence"
+              hx-target="#sync-cadence-feedback"
+              hx-swap="innerHTML"
+              hx-disabled-elt="button">
+            <label class="form-control w-full max-w-xs">
+                <span class="label-dim text-xs mb-1">Run automatically</span>
+                <select class="select select-bordered select-sm w-full" name="sync_cadence">
+                    <option value="manual" {% if connection.sync_cadence == "manual" || connection.sync_cadence == "" %}selected{% endif %}>Manual only</option>
+                    <option value="hourly" {% if connection.sync_cadence == "hourly" %}selected{% endif %}>Hourly (on the hour, UTC)</option>
+                    <option value="every_6h" {% if connection.sync_cadence == "every_6h" %}selected{% endif %}>Every 6 hours (UTC)</option>
+                    <option value="every_12h" {% if connection.sync_cadence == "every_12h" %}selected{% endif %}>Every 12 hours (UTC)</option>
+                    <option value="daily" {% if connection.sync_cadence == "daily" %}selected{% endif %}>Daily (06:00 UTC)</option>
+                </select>
+            </label>
+            <button type="submit" class="btn btn-sm btn-outline" {% if control.mode.as_str() != "enabled" %}disabled{% endif %}>
+                <span class="htmx-indicator loading loading-spinner loading-xs"></span>
+                Save cadence
+            </button>
+        </form>
+        <div id="sync-cadence-feedback" class="min-h-6 mt-2"></div>
+        <div id="sync-status" class="mt-4" hx-get="/integrations/{{ connection.slug }}/sync/status" hx-trigger="load" hx-swap="innerHTML"></div>
+        {% else %}
+        <p class="label-dim text-sm mt-4">This integration is refreshed manually from Timeline; no automatic cadence is advertised.</p>
+        {% endif %}
+    </div></div>
+
+    <div class="card bg-base-100 shadow-sm border border-base-300"><div class="card-body">
+        <div class="mb-4"><h2 class="card-title">Syncs</h2><p class="label-dim text-sm mt-1">Recent durable executions for this integration.</p></div>
+        {% if sync_logs.is_empty() %}<div class="alert alert-info">No sync executions have been recorded.</div>{% else %}
+        <div class="overflow-x-auto"><table class="table table-sm bg-base-100"><thead><tr><th>#</th><th>Started</th><th>Finished</th><th>Status</th><th>Loans</th><th>Events</th><th>Snapshots</th><th>Endpoints</th><th>Error</th></tr></thead><tbody>
+            {% for log in sync_logs %}<tr>
+                <td>{{ log.id|number }}</td><td>{{ log.started_at|datetime_local|safe }}</td><td>{% match log.finished_at %}{% when Some with (timestamp) %}{{ timestamp|datetime_local|safe }}{% when None %}—{% endmatch %}</td>
+                <td>{% if log.status.as_str() == "success" %}<span class="badge badge-success badge-sm">success</span>{% else if log.status.as_str() == "error" %}<span class="badge badge-error badge-sm">error</span>{% else %}<span class="badge badge-warning badge-sm">running</span>{% endif %}</td>
+                <td>{{ log.loans_upserted|number }}</td><td>{{ log.events_upserted|number }}</td><td>{{ log.snapshots_created|number }}</td><td class="max-w-xs truncate">{{ log.endpoints_hit.as_deref().unwrap_or("—") }}</td><td class="max-w-xs truncate">{{ log.error_message.as_deref().unwrap_or("—") }}</td>
+            </tr>{% endfor %}
+        </tbody></table></div>{% endif %}
+    </div></div>
+</div>
+{% endblock %}

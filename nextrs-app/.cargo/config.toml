@@ -1,0 +1,3 @@
+# vercel-rust reads config.build.target and crashes if this table is absent.
+# Empty means build for Vercel's host target.
+[build]

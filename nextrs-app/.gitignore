@@ -1,0 +1,7 @@
+/target/
+/tools/*/target/
+/node_modules
+/data/
+/.env
+.vercel
+.env*

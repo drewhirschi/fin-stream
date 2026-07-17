@@ -1,0 +1,7 @@
+# Vercel compiles the Rust function from source.
+target
+data
+tools
+node_modules
+.vercel
+*.log

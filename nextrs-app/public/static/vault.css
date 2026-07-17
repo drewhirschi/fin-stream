@@ -1,0 +1,359 @@
+/* Precision Vault Design System
+ * Based on docs/design/stitch_trust_deed/DESIGN.md
+ * Dark charcoal canvas, emerald/crimson accents, no-border separation
+ */
+
+/* ═══════════════════════════════════════════════════════════
+   Font faces — vendored, no CDN
+   ═══════════════════════════════════════════════════════════ */
+
+@font-face {
+    font-family: 'Manrope';
+    src: url('/static/vendor/fonts/manrope-variable.woff2') format('woff2');
+    font-weight: 200 800;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Inter';
+    src: url('/static/vendor/fonts/inter-variable.woff2') format('woff2');
+    font-weight: 100 900;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Roboto Mono';
+    src: url('/static/vendor/fonts/roboto-mono-400.woff2') format('woff2');
+    font-weight: 400;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Roboto Mono';
+    src: url('/static/vendor/fonts/roboto-mono-700.woff2') format('woff2');
+    font-weight: 700;
+    font-display: swap;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Design tokens — Precision Vault palette
+   ═══════════════════════════════════════════════════════════ */
+
+:root {
+    /* Surface hierarchy */
+    --vault-surface: #111417;
+    --vault-surface-dim: #0d0f11;
+    --vault-surface-container-lowest: #0b0d0f;
+    --vault-surface-container-low: #191c1f;
+    --vault-surface-container: #1d2023;
+    --vault-surface-container-high: #272a2d;
+    --vault-surface-container-highest: #323538;
+
+    /* Text */
+    --vault-on-surface: #e1e2e7;
+    --vault-on-surface-variant: #86948a;
+
+    /* Accents */
+    --vault-primary: #4edea3;
+    --vault-primary-container: #10b981;
+    --vault-primary-fixed: #6ee7b7;
+    --vault-primary-fixed-dim: #34d399;
+    --vault-on-primary: #003822;
+    --vault-on-primary-container: #a7f3d0;
+
+    --vault-secondary: #ef4444;
+    --vault-secondary-container: #991b1b;
+    --vault-on-secondary-container: #fecaca;
+
+    /* Outline */
+    --vault-outline: #86948a;
+    --vault-outline-variant: rgba(134, 148, 138, 0.15);
+
+    /* Misc */
+    --vault-warning: #f59e0b;
+
+    /* Typography */
+    --font-display: 'Manrope', system-ui, sans-serif;
+    --font-body: 'Inter', system-ui, sans-serif;
+    --font-mono: 'Roboto Mono', ui-monospace, monospace;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Vault-scoped styles (apply to .vault pages)
+   ═══════════════════════════════════════════════════════════ */
+
+.vault {
+    background-color: var(--vault-surface);
+    color: var(--vault-on-surface);
+    font-family: var(--font-body);
+}
+
+.vault h1, .vault h2, .vault h3 {
+    font-family: var(--font-display);
+    font-weight: 700;
+}
+
+.vault .mono {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+}
+
+/* Surface layers */
+.vault .surface-low {
+    background-color: var(--vault-surface-container-low);
+    border-radius: 0.75rem;
+}
+
+.vault .surface-high {
+    background-color: var(--vault-surface-container-high);
+    border-radius: 0.75rem;
+}
+
+.vault .surface-highest {
+    background-color: var(--vault-surface-container-highest);
+    border-radius: 0.75rem;
+}
+
+/* No-border rule: boundaries via color shifts only */
+.vault .surface-low,
+.vault .surface-high,
+.vault .surface-highest {
+    border: none;
+}
+
+/* Ghost border fallback for accessibility */
+.vault .ghost-border {
+    border: 1px solid var(--vault-outline-variant);
+}
+
+/* Financial chips */
+.vault .chip-positive {
+    background-color: var(--vault-primary-container);
+    color: var(--vault-on-primary-container);
+    border-radius: 9999px;
+    padding: 0.125rem 0.75rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+}
+
+.vault .chip-negative {
+    background-color: var(--vault-secondary-container);
+    color: var(--vault-on-secondary-container);
+    border-radius: 9999px;
+    padding: 0.125rem 0.75rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+}
+
+/* Emerald pulse gradient for CTAs */
+.vault .emerald-pulse {
+    background: linear-gradient(135deg, var(--vault-primary), var(--vault-primary-container));
+    color: var(--vault-on-primary);
+}
+
+/* Glassmorphism overlay */
+.vault .glass {
+    background: rgba(39, 42, 45, 0.6);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid var(--vault-outline-variant);
+    border-radius: 0.75rem;
+}
+
+/* Ambient shadows */
+.vault .shadow-ambient {
+    box-shadow: 0px 24px 48px rgba(0, 0, 0, 0.4);
+}
+
+/* Soft glow for active elements */
+.vault .glow-emerald {
+    box-shadow: 0 0 4px var(--vault-primary);
+}
+
+.vault .glow-crimson {
+    box-shadow: 0 0 4px var(--vault-secondary);
+}
+
+.vault .glow-warning {
+    box-shadow: 0 0 6px var(--vault-warning);
+}
+
+/* Hero number */
+.vault .hero-number {
+    font-family: var(--font-display);
+    font-size: 3rem;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.1;
+}
+
+.vault .hero-positive { color: var(--vault-primary); }
+.vault .hero-negative { color: var(--vault-secondary); }
+
+/* Label styles */
+.vault .label-dim {
+    font-size: 0.75rem;
+    color: var(--vault-on-surface-variant);
+    font-family: var(--font-body);
+}
+
+/* Stream lanes */
+.vault .stream-lane {
+    position: relative;
+    height: 3.5rem;
+    background-color: var(--vault-surface-container-low);
+    border-radius: 0.75rem;
+    overflow: visible;
+}
+
+.vault .stream-lane-label {
+    font-family: var(--font-body);
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--vault-on-surface);
+}
+
+/* Event dots */
+.vault .dot {
+    position: absolute;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    cursor: pointer;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.vault .dot:hover {
+    transform: translate(-50%, -50%) scale(1.6);
+}
+
+.vault .dot-inflow {
+    background-color: var(--vault-primary);
+}
+
+.vault .dot-outflow {
+    background-color: var(--vault-secondary);
+}
+
+/* Delinquent borrower: amber warning ring */
+.vault .dot-delinquent {
+    box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.6);
+}
+
+/* Scrubber line */
+.vault .scrubber-line {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background-color: var(--vault-primary);
+    pointer-events: none;
+    z-index: 10;
+    opacity: 0.7;
+}
+
+/* Scrubber range input styled for vault */
+.vault input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 4px;
+    background: var(--vault-surface-container-highest);
+    border-radius: 2px;
+    outline: none;
+}
+
+.vault input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--vault-primary);
+    cursor: grab;
+    box-shadow: 0 0 6px rgba(78, 222, 163, 0.4);
+}
+
+.vault input[type="range"]::-webkit-slider-thumb:active {
+    cursor: grabbing;
+    transform: scale(1.2);
+}
+
+.vault input[type="range"]::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--vault-primary);
+    cursor: grab;
+    border: none;
+    box-shadow: 0 0 6px rgba(78, 222, 163, 0.4);
+}
+
+/* Data table for vault */
+.vault table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-family: var(--font-body);
+    font-size: 0.875rem;
+}
+
+.vault table thead th {
+    color: var(--vault-on-surface-variant);
+    font-size: 0.75rem;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 0.75rem 1rem;
+    text-align: left;
+    border-bottom: 1px solid var(--vault-outline-variant);
+}
+
+.vault table tbody tr {
+    transition: background-color 0.15s;
+}
+
+.vault table tbody tr:hover {
+    background-color: var(--vault-surface-container);
+}
+
+.vault table tbody td {
+    padding: 0.625rem 1rem;
+    border: none;
+}
+
+/* Month markers in timeline */
+.vault .month-marker {
+    border-left: 1px solid var(--vault-outline-variant);
+    opacity: 0.5;
+}
+
+.vault .month-label {
+    font-size: 0.625rem;
+    color: var(--vault-on-surface-variant);
+    font-family: var(--font-body);
+}
+
+/* Sidebar override for vault context */
+.vault-sidebar {
+    background-color: var(--vault-surface-container-low);
+    border-right: none;
+}
+
+.vault-sidebar .menu a {
+    color: var(--vault-on-surface-variant);
+    font-family: var(--font-body);
+    transition: color 0.15s, background-color 0.15s;
+}
+
+.vault-sidebar .menu a:hover,
+.vault-sidebar .menu a.active {
+    color: var(--vault-primary);
+    background-color: var(--vault-surface-container);
+}
+
+@media print {
+    .vault { background: white !important; color: black !important; }
+}

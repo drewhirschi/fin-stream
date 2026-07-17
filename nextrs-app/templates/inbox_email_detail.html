@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+
+{% block nav_inbox %}active menu-active{% endblock %}
+{% block nav_inbox_attrs %}aria-current="page"{% endblock %}
+
+{% block content %}
+<div class="vault flex flex-col gap-6">
+    <div class="text-sm breadcrumbs">
+        <ul>
+            <li><a href="/inbox">Inbox</a></li>
+            <li>{{ email.subject.as_deref().unwrap_or("(no subject)") }}</li>
+        </ul>
+    </div>
+
+    <section class="card bg-base-100 shadow-sm border border-base-300">
+        <div class="card-body">
+            <h1 class="card-title text-2xl">{{ email.subject.as_deref().unwrap_or("(no subject)") }}</h1>
+            <dl class="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-4 gap-y-2 mt-3 text-sm">
+                <dt class="label-dim">From</dt><dd>{{ email.from_address }}</dd>
+                <dt class="label-dim">To</dt>
+                <dd>
+                    {% if recipients.is_empty() %}No recipients recorded{% else %}
+                    {% for recipient in recipients %}{% if !loop.first %}, {% endif %}{{ recipient }}{% endfor %}
+                    {% endif %}
+                </dd>
+                <dt class="label-dim">Received</dt><dd>{{ email.received_at|datetime_local|safe }}</dd>
+                <dt class="label-dim">Provider ID</dt><dd class="font-mono text-xs break-all">{{ email.resend_email_id }}</dd>
+                <dt class="label-dim">Processing</dt>
+                <dd>
+                    {% if email.processing_state == "stored" %}
+                    <span class="badge badge-success badge-sm">Stored</span>
+                    {% else if email.processing_state == "error" %}
+                    <span class="badge badge-error badge-sm">Error</span>
+                    {% else %}
+                    <span class="badge badge-warning badge-sm">Pending</span>
+                    {% endif %}
+                </dd>
+            </dl>
+
+            {% match email.error_message %}
+            {% when Some with (message) %}
+            <div class="alert alert-error mt-4"><span class="break-words">{{ message }}</span></div>
+            {% when None %}{% endmatch %}
+
+            <div class="mt-4 pt-4 border-t border-base-300">
+                {% match email.loan_account %}
+                {% when Some with (account) %}
+                <div class="flex items-center gap-3">
+                    <span class="label-dim text-sm">Linked loan</span>
+                    <span class="font-mono text-xs">{{ account }}</span>
+                    <form method="post" action="/inbox/{{ email.id }}/unlink">
+                        <input type="hidden" name="return_to" value="detail">
+                        <button type="submit" class="btn btn-xs btn-ghost">Unlink</button>
+                    </form>
+                </div>
+                {% when None %}
+                {% if loans.is_empty() %}
+                <div class="label-dim text-sm">No active imported TMO loan is available for linking.</div>
+                {% else %}
+                <form method="post" action="/inbox/{{ email.id }}/link" class="flex items-center gap-2 flex-wrap">
+                    <input type="hidden" name="return_to" value="detail">
+                    <label for="loan-account" class="label-dim text-sm">Link to loan</label>
+                    <select id="loan-account" name="loan_account" required class="select select-bordered select-sm w-64">
+                        <option value="">Select loan…</option>
+                        {% for loan in loans %}
+                        <option value="{{ loan.loan_account }}">{{ loan.loan_account }} — {{ loan.borrower_name.as_deref().unwrap_or("Unknown borrower") }}</option>
+                        {% endfor %}
+                    </select>
+                    <button type="submit" class="btn btn-sm btn-outline">Link</button>
+                </form>
+                {% endif %}
+                {% endmatch %}
+            </div>
+        </div>
+    </section>
+
+    {% include "_inbox_email_content.html" %}
+</div>
+{% endblock %}

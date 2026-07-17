@@ -1,0 +1,17 @@
+{
+  "data": {
+    "isValidUser": true,
+    "userInformation": {
+      "sourceRecId": "source-42",
+      "companyId": "vci",
+      "account": "10001",
+      "name": "Fixture Lender",
+      "email": "lender@example.com"
+    },
+    "message": null,
+    "requiresMfa": false
+  },
+  "success": true,
+  "error": null,
+  "errorType": null
+}

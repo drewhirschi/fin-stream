@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+
+{% block nav_dashboard %}active menu-active{% endblock %}
+{% block nav_dashboard_attrs %}aria-current="page"{% endblock %}
+
+{% block content %}
+<div class="vault max-w-3xl">
+    <h1 class="text-3xl">Welcome back</h1>
+    <p class="label-dim mt-2 mb-6">Your manual cash timeline is ready in the NextRS application.</p>
+
+    <div class="grid gap-4 md:grid-cols-2">
+        <a href="/forecast" class="surface-low p-5 block no-underline">
+            <div class="label-dim">Timeline</div>
+            <div class="text-xl font-semibold mt-1">See cash on any date</div>
+            <p class="label-dim mt-2">Set cash on hand, add events, and inspect the running balance.</p>
+        </a>
+        <a href="/streams" class="surface-low p-5 block no-underline">
+            <div class="label-dim">Streams</div>
+            <div class="text-xl font-semibold mt-1">Configure money in and out</div>
+            <p class="label-dim mt-2">Manage accounts, recurring streams, and merged views.</p>
+        </a>
+    </div>
+</div>
+{% endblock %}

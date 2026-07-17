@@ -1,0 +1,4 @@
+# The React-first NextRS bundler uses the current Rolldown/Oxc toolchain,
+# whose published crates require Rust 1.94 or newer.
+[toolchain]
+channel = "1.95.0"

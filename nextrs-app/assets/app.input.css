@@ -1,0 +1,12 @@
+@import "tailwindcss";
+
+@plugin "daisyui" {
+  themes: light, dark;
+}
+
+/* Tailwind scans only the isolated NextRS package. */
+@source "../templates";
+@source "../src/**/*.rs";
+@source "../app/**/*.rs";
+
+[x-cloak] { display: none !important; }

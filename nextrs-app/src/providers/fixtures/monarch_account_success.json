@@ -1,0 +1,13 @@
+{
+  "data": {
+    "account": {
+      "id": "account-42",
+      "displayName": "Trust Account",
+      "displayBalance": 12345.67,
+      "currentBalance": 12345.67,
+      "updatedAt": "2026-07-14T18:00:00Z",
+      "mask": "6789"
+    }
+  },
+  "errors": null
+}

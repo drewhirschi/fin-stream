@@ -1,0 +1,85 @@
+<section class="card bg-base-100 shadow-sm border border-base-300">
+    <div class="card-body">
+        <div class="flex items-center justify-between gap-3">
+            <h2 class="card-title text-lg">Body</h2>
+            {% if email.processing_state == "stored" %}
+            <span class="badge badge-success badge-sm">Stored metadata</span>
+            {% else if email.processing_state == "error" %}
+            <span class="badge badge-error badge-sm">Storage error</span>
+            {% else %}
+            <span class="badge badge-warning badge-sm">Pending</span>
+            {% endif %}
+        </div>
+        {% match email.body_s3_key %}
+        {% when Some with (key) %}
+            {% if key.is_empty() %}
+            <div class="alert alert-warning mt-3">Body storage metadata is incomplete.</div>
+            {% else %}
+            <div class="mt-3 text-sm">
+                <div><span class="label-dim">Content type:</span> {{ email.body_content_type.as_deref().unwrap_or("Unknown") }}</div>
+                <a class="btn btn-sm btn-outline mt-3" href="/media/emails/{{ key }}" target="_blank" rel="noopener noreferrer">Open stored body</a>
+            </div>
+            {% endif %}
+        {% when None %}
+            {% if email.processing_state == "error" %}
+            <div class="alert alert-error mt-3">The body was not stored.</div>
+            {% else %}
+            <div class="alert alert-warning mt-3">The body is not stored yet.</div>
+            {% endif %}
+        {% endmatch %}
+        {% if email.processing_state == "error" %}
+        <form method="post" action="/inbox/{{ email.id }}/retry" class="mt-3">
+            <button type="submit" class="btn btn-sm btn-warning">Retry storage</button>
+        </form>
+        {% endif %}
+    </div>
+</section>
+
+<section class="card bg-base-100 shadow-sm border border-base-300">
+    <div class="card-body">
+        <h2 class="card-title text-lg">Attachments</h2>
+        {% if attachments.is_empty() %}
+        <div class="label-dim text-sm mt-2">No attachment metadata was recorded.</div>
+        {% else %}
+        <div class="overflow-x-auto mt-2">
+            <table class="table table-sm">
+                <thead><tr><th>Filename</th><th>Type</th><th>Size</th><th>State</th><th>Access</th></tr></thead>
+                <tbody>
+                    {% for attachment in attachments %}
+                    <tr>
+                        <td class="font-mono text-xs break-all">{{ attachment.filename }}</td>
+                        <td>{{ attachment.content_type }}</td>
+                        <td>{% match attachment.size_bytes %}{% when Some with (size) %}{{ size|number }} bytes{% when None %}—{% endmatch %}</td>
+                        <td>
+                            {% if attachment.processing_state == "stored" %}
+                            <span class="badge badge-success badge-sm">Stored</span>
+                            {% else if attachment.processing_state == "error" %}
+                            <span class="badge badge-error badge-sm">Error</span>
+                            {% else %}
+                            <span class="badge badge-warning badge-sm">Pending</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% match attachment.s3_key %}
+                            {% when Some with (key) %}
+                                {% if key.is_empty() %}
+                                <span class="label-dim text-xs">Storage metadata incomplete</span>
+                                {% else %}
+                                <a class="link link-hover text-xs" href="/media/emails/{{ key }}">Download</a>
+                                {% endif %}
+                            {% when None %}
+                                {% if attachment.processing_state == "error" %}
+                                <span class="text-error text-xs">Storage failed; retry from the body section.</span>
+                                {% else %}
+                                <span class="label-dim text-xs">Not stored</span>
+                                {% endif %}
+                            {% endmatch %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+    </div>
+</section>
