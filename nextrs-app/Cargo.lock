@@ -1706,9 +1706,9 @@ dependencies = [
 
 [[package]]
 name = "nextrs"
-version = "0.3.7"
+version = "0.3.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bc98f69d8bd73f080b591e5a61d6ab7ab3243954fe052bc84764e57db88fec70"
+checksum = "b6c6d991720b72e1c745ed0c243cd0cfa2e6ab445f658400c8690100fc23a7d3"
 dependencies = [
  "askama",
  "async-stream",

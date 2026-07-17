@@ -29,7 +29,6 @@ use axum::{
     Router,
     extract::{DefaultBodyLimit, Extension},
     middleware::{from_fn, from_fn_with_state},
-    routing::get,
 };
 use session_store::LibsqlSessionStore;
 use std::sync::Arc;
@@ -127,13 +126,6 @@ where
     let router = nextrs::router::build_router_with_prefetch(
         generated_registry(),
         nextrs::PrefetchConfig::OFF,
-    )
-    // NextRS 0.3.7's generated shell probes this endpoint for every React
-    // route, even when the app has no server-side prefetch modules. Keep the
-    // response successful and empty until those routes opt into seeded data.
-    .route(
-        nextrs::router::NX_PREFETCH_PATH,
-        get(|| async { axum::Json(Vec::<serde_json::Value>::new()) }),
     );
     #[cfg(feature = "local-db")]
     let router = router.nest_service(
@@ -364,27 +356,6 @@ mod tests {
         let body = String::from_utf8_lossy(&body);
         assert!(body.contains("__nx_root__"));
         assert!(body.contains("/dist/"));
-    }
-
-    #[tokio::test]
-    async fn authenticated_client_prefetch_probe_is_successful_and_empty() {
-        let app = test_app(true).await;
-        let login = app.clone().oneshot(login_request(PASSWORD)).await.unwrap();
-        let response = app
-            .oneshot(
-                Request::get("/__nx/prefetch?path=%2Fintegrations%2Ftmo%2Floans")
-                    .header(header::COOKIE, session_cookie(&login))
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::OK);
-        assert_eq!(
-            to_bytes(response.into_body(), usize::MAX).await.unwrap(),
-            "[]"
-        );
     }
 
     #[tokio::test]

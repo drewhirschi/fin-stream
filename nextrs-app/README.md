@@ -1,6 +1,6 @@
 # Trust Deeds NextRS app
 
-The NextRS 0.3.7 target uses idiomatic React `page.tsx` and `layout.tsx`
+The NextRS 0.3.8 target uses idiomatic React `page.tsx` and `layout.tsx`
 conventions with a persistent application shell, shadcn-style components, and
 Rust `route.rs` JSON/action boundaries. It has revocable libSQL authentication plus the
 manual Streams/Forecast vertical slice: accounts, an explicit dated cash

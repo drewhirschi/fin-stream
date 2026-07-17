@@ -1,21 +1,21 @@
 {
   "entries": {
-    "__app_shell__": "/dist/__app_shell__-B4mVlDlV.js",
-    "canvas": "/dist/canvas-Dssa3KEs.js",
-    "forecast": "/dist/forecast-CS8WaPLN.js",
-    "inbox": "/dist/inbox-C4hlTQDA.js",
-    "inbox-_email_id_": "/dist/inbox-_email_id_-emkRqM1u.js",
-    "index": "/dist/index-EocDuFWF.js",
-    "integrations": "/dist/integrations-D79B0Q9M.js",
-    "integrations-_slug_": "/dist/integrations-_slug_-BU7G_QrC.js",
-    "integrations-_slug_-debug": "/dist/integrations-_slug_-debug-Dvlj-eYm.js",
-    "integrations-_slug_-loans": "/dist/integrations-_slug_-loans-D0h2JVTp.js",
-    "integrations-_slug_-loans-_loan_account_": "/dist/integrations-_slug_-loans-_loan_account_-DQheiSaS.js",
-    "integrations-_slug_-payments": "/dist/integrations-_slug_-payments-Dcagj1NH.js",
-    "integrations-_slug_-sync": "/dist/integrations-_slug_-sync-3Fr48bd7.js",
-    "login": "/dist/login-BBwLUVIe.js",
-    "not-found": "/dist/not-found-CSsK7kwD.js",
-    "streams": "/dist/streams-Cwjk4uc4.js"
+    "__app_shell__": "/dist/__app_shell__-CaF89h7f.js",
+    "canvas": "/dist/canvas-C6LmMb5v.js",
+    "forecast": "/dist/forecast-CuPHX-gw.js",
+    "inbox": "/dist/inbox-BHfuOWKo.js",
+    "inbox-_email_id_": "/dist/inbox-_email_id_-D18qNw99.js",
+    "index": "/dist/index-D6RHZOnj.js",
+    "integrations": "/dist/integrations-CAtMjwEd.js",
+    "integrations-_slug_": "/dist/integrations-_slug_-Crm-Rawn.js",
+    "integrations-_slug_-debug": "/dist/integrations-_slug_-debug-CPKUubZ0.js",
+    "integrations-_slug_-loans": "/dist/integrations-_slug_-loans-263OpoJF.js",
+    "integrations-_slug_-loans-_loan_account_": "/dist/integrations-_slug_-loans-_loan_account_-BcI35Dg6.js",
+    "integrations-_slug_-payments": "/dist/integrations-_slug_-payments-C62RRCvm.js",
+    "integrations-_slug_-sync": "/dist/integrations-_slug_-sync-BiMRxH4j.js",
+    "login": "/dist/login-qMiEohYt.js",
+    "not-found": "/dist/not-found-0ndz6A8W.js",
+    "streams": "/dist/streams-xf0OXLS1.js"
   },
   "stylesheet": "/dist/style-51cafe9d6c48bc8e.css"
 }
