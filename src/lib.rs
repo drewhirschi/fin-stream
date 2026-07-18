@@ -123,9 +123,9 @@ where
         .with_secure(cookie_secure)
         .with_path("/")
         .with_expiry(Expiry::OnInactivity(Duration::days(7)));
-    let router = nextrs::router::build_router_with_prefetch(
+    let router = nextrs::router::build_router_with_speculation(
         generated_registry(),
-        nextrs::PrefetchConfig::OFF,
+        nextrs::SpeculationConfig::OFF,
     );
     #[cfg(feature = "local-server")]
     let router = router.nest_service(

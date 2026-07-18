@@ -1,4 +1,4 @@
-import { C as CardTitle, O as dateTime, Q as require_jsx_runtime, S as CardHeader, T as Badge, _t as __toESM, a as Empty, c as Page, g as createLucideIcon, ht as require_react, r as IntegrationBoundary, w as Button, x as CardDescription, y as Card } from "./chunks/src-ZnV_ftAe.js";
+import { C as CardTitle, O as dateTime, Q as require_jsx_runtime, S as CardHeader, T as Badge, _t as __toESM, a as Empty, c as Page, d as LoaderCircle, g as createLucideIcon, ht as require_react, n as useApi, r as IntegrationBoundary, w as Button, x as CardDescription, y as Card } from "./chunks/src-ZnV_ftAe.js";
 
 //#region node_modules/lucide-react/dist/esm/icons/play.js
 /**
@@ -39,18 +39,50 @@ function Sync() {
 	}) });
 }
 function SyncView({ data, slug }) {
-	const [running, setRunning] = (0, import_react.useState)(false);
+	const initialRun = data.sync_logs.find((run) => run.status === "running") ?? data.sync_logs[0] ?? null;
+	const [submitting, setSubmitting] = (0, import_react.useState)(false);
+	const [error, setError] = (0, import_react.useState)(null);
+	const [watchingForAutomaticRun, setWatchingForAutomaticRun] = (0, import_react.useState)(true);
+	const sawRunning = (0, import_react.useRef)(initialRun?.status === "running");
+	const status = useApi(["integration-sync-status", slug], `/integrations/${encodeURIComponent(slug)}/sync/status`, {
+		initialData: { run: initialRun },
+		refetchInterval: (query) => query.state.data?.run?.status === "running" || watchingForAutomaticRun ? 1500 : false
+	});
+	const durableRunning = status.data?.run?.status === "running";
+	const busy = submitting || durableRunning;
+	(0, import_react.useEffect)(() => {
+		const timeout = window.setTimeout(() => setWatchingForAutomaticRun(false), 1e4);
+		return () => window.clearTimeout(timeout);
+	}, []);
+	(0, import_react.useEffect)(() => {
+		if (durableRunning) {
+			sawRunning.current = true;
+			return;
+		}
+		if (sawRunning.current && status.data) {
+			sawRunning.current = false;
+			window.location.reload();
+		}
+	}, [durableRunning, status.data]);
 	const run = async () => {
-		setRunning(true);
+		setSubmitting(true);
+		setError(null);
 		try {
-			await fetch(`/integrations/${encodeURIComponent(slug)}/sync/run`, {
+			const response = await fetch(`/integrations/${encodeURIComponent(slug)}/sync/run`, {
 				method: "POST",
 				credentials: "same-origin",
-				headers: { "Sec-Fetch-Site": "same-origin" }
+				headers: { Accept: "application/json" }
 			});
+			if (!response.ok && response.status !== 409) throw new Error(`The sync could not be started (${response.status}).`);
+			if (response.status === 409) {
+				if ((await status.refetch()).data?.run?.status !== "running") throw new Error("The sync could not be started. Check the integration configuration and try again.");
+				return;
+			}
 			window.location.reload();
+		} catch (runError) {
+			setError(runError instanceof Error ? runError.message : "The sync could not be started.");
 		} finally {
-			setRunning(false);
+			setSubmitting(false);
 		}
 	};
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Page, {
@@ -58,10 +90,29 @@ function SyncView({ data, slug }) {
 		description: "Provider refresh history and operational controls.",
 		actions: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Button, {
 			onClick: run,
-			disabled: running || data.control.mode !== "enabled",
-			children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Play, { className: "size-4" }), running ? "Starting…" : "Run sync"]
+			disabled: busy || data.control.mode !== "enabled",
+			children: [busy ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(LoaderCircle, { className: "size-4 animate-spin" }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Play, { className: "size-4" }), busy ? "Syncing…" : "Run sync"]
 		}),
 		children: [
+			durableRunning ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+				className: "flex gap-3 rounded-xl border border-primary/25 bg-accent p-4 text-sm text-accent-foreground",
+				"aria-live": "polite",
+				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(LoaderCircle, { className: "size-5 shrink-0 animate-spin" }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+					className: "font-medium",
+					children: "Sync in progress"
+				}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
+					className: "mt-1 opacity-80",
+					children: [
+						"Started ",
+						dateTime(status.data?.run?.started_at),
+						". This page will update automatically when it finishes."
+					]
+				})] })]
+			}) : null,
+			error ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+				className: "rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive",
+				children: error
+			}) : null,
 			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("section", {
 				className: "grid gap-4 md:grid-cols-3",
 				children: [

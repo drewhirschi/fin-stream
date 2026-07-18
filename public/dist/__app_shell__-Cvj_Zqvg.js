@@ -5704,7 +5704,7 @@ function IntegrationLayout({ children }) {
 }
 
 //#endregion
-//#region ../target/debug/build/trust-deeds-c93bbfa7a4286e4d/out/nextrs_tsx/__app_shell__.tsx
+//#region ../target/debug/build/trust-deeds-ea3f8debbfea7f14/out/nextrs_tsx/__app_shell__.tsx
 const qc = new QueryClient({ defaultOptions: { queries: { staleTime: 3e4 } } });
 seedQueryClient(qc);
 function nxLeaf(load) {
@@ -5789,7 +5789,7 @@ const route_10 = createRoute({
 const route_11 = createRoute({
 	getParentRoute: () => layout_1,
 	path: "/integrations/$slug/sync",
-	component: nxLeaf(() => import("./integrations-_slug_-sync-CGkr4IAZ.js"))
+	component: nxLeaf(() => import("./integrations-_slug_-sync-CzQMvZBU.js"))
 });
 const route_12 = createRoute({
 	getParentRoute: () => layout_0,

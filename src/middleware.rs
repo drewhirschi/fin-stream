@@ -8,9 +8,13 @@ use axum::{
     response::{IntoResponse, Redirect, Response},
 };
 use serde_json::json;
+use std::sync::Arc;
 use tower_sessions::Session;
 
-use crate::{auth::SESSION_USER_ID_KEY, cron_auth::CronAuthenticator, db::AppContext, templates};
+use crate::{
+    auth::SESSION_USER_ID_KEY, cron_auth::CronAuthenticator, crypto::CredentialCipher,
+    db::AppContext, templates,
+};
 
 const REQUEST_ID_HEADER: &str = "x-request-id";
 const CONTENT_SECURITY_POLICY_START: &str =
@@ -104,8 +108,10 @@ pub async fn response_perimeter(
 }
 
 pub async fn require_auth(
+    wait: nextrs::WaitUntil,
     Extension(context): Extension<AppContext>,
     Extension(cron_authenticator): Extension<CronAuthenticator>,
+    Extension(cipher): Extension<Arc<CredentialCipher>>,
     session: Session,
     request: Request,
     next: Next,
@@ -154,7 +160,12 @@ pub async fn require_auth(
     };
     if let Some(user_id) = user_id {
         match context.user_is_active(user_id).await {
-            Ok(true) => return next.run(request).await,
+            Ok(true) => {
+                if cfg!(not(test)) && triggers_activity_refresh(&request) {
+                    crate::activity_refresh::schedule_tmo_if_stale(&wait, context.clone(), cipher);
+                }
+                return next.run(request).await;
+            }
             Ok(false) => {
                 if let Err(error) = session.flush().await {
                     tracing::error!(%error, "failed to revoke inactive user's session");
@@ -169,6 +180,41 @@ pub async fn require_auth(
     }
 
     unauthenticated_response(path, request.headers())
+}
+
+fn triggers_activity_refresh(request: &Request) -> bool {
+    if request.method() != Method::GET {
+        return false;
+    }
+
+    // NextRS client navigation can reach the server either as a document load
+    // or as the authenticated UI-data request that hydrates a client route.
+    // Status polling and other APIs are deliberately excluded so they cannot
+    // continuously schedule redundant due checks.
+    if request.uri().path().starts_with("/api/ui/") {
+        return true;
+    }
+
+    let headers = request.headers();
+    let fetch_navigation = headers
+        .get("sec-fetch-mode")
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value.eq_ignore_ascii_case("navigate"))
+        && headers
+            .get("sec-fetch-dest")
+            .and_then(|value| value.to_str().ok())
+            .is_some_and(|value| value.eq_ignore_ascii_case("document"));
+    let accepts_html = headers
+        .get(header::ACCEPT)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| {
+            value
+                .split(',')
+                .filter_map(|media_type| media_type.split(';').next())
+                .any(|media_type| media_type.trim().eq_ignore_ascii_case("text/html"))
+        });
+
+    fetch_navigation || accepts_html
 }
 
 fn is_mutation(method: &Method) -> bool {
@@ -321,6 +367,47 @@ fn generated_request_id() -> HeaderValue {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn request(method: Method, accept: Option<&str>) -> Request {
+        let mut builder = Request::builder().method(method).uri("/integrations/tmo");
+        if let Some(accept) = accept {
+            builder = builder.header(header::ACCEPT, accept);
+        }
+        builder.body(Body::empty()).unwrap()
+    }
+
+    #[test]
+    fn background_refresh_follows_page_and_ui_data_activity() {
+        assert!(triggers_activity_refresh(&request(
+            Method::GET,
+            Some("text/html,application/xhtml+xml")
+        )));
+        assert!(!triggers_activity_refresh(&request(
+            Method::GET,
+            Some("application/json")
+        )));
+        assert!(!triggers_activity_refresh(&request(
+            Method::POST,
+            Some("text/html")
+        )));
+
+        let ui_data = Request::builder()
+            .method(Method::GET)
+            .uri("/api/ui/integrations/tmo")
+            .header(header::ACCEPT, "application/json")
+            .body(Body::empty())
+            .unwrap();
+        assert!(triggers_activity_refresh(&ui_data));
+
+        let fetch_navigation = Request::builder()
+            .method(Method::GET)
+            .uri("/integrations/tmo/sync")
+            .header("sec-fetch-mode", "navigate")
+            .header("sec-fetch-dest", "document")
+            .body(Body::empty())
+            .unwrap();
+        assert!(triggers_activity_refresh(&fetch_navigation));
+    }
 
     #[test]
     fn request_id_validation_is_narrow_and_bounded() {
