@@ -1,369 +1,636 @@
-use std::str::FromStr;
-use std::sync::Arc;
+use std::{error::Error, fmt, sync::Arc};
 
-use chrono::{DateTime, Duration, Timelike, Utc};
-use cron::Schedule;
-use sqlx::PgPool;
+use axum::{
+    Json,
+    extract::Extension,
+    http::{HeaderValue, StatusCode, header},
+    response::{IntoResponse, Response},
+};
+use libsql::TransactionBehavior;
+use serde_json::json;
+use time::{Duration, OffsetDateTime};
 
-use crate::AppState;
+use crate::{
+    crypto::CredentialCipher,
+    db::AppContext,
+    integrations::{IntegrationRepository, IntegrationWriteRepository},
+    operations::{OperationError, OperationRepository, SyncRunStatus},
+    sync_runtime::{
+        DirectTmoProviderFactory, SyncExecution, SyncRuntimeError, SystemSyncClock,
+        TMO_CONNECTION_SLUG, TmoSyncService,
+    },
+};
 
-/// Typed sync cadence. Persisted in `intg.integration_connection.sync_cadence`
-/// as one of the string values below. This replaces the previous free-form
-/// cron expression column to avoid "0 21 * * *" style typos sending a 4×/day
-/// intent to once-daily.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+const RETRY_AFTER_SECONDS: &str = "60";
+
+/// Fixed cadences retained from the PostgreSQL scheduler. Arbitrary cron
+/// expressions are never executed; known legacy expressions are normalized to
+/// one of these values on read.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SyncCadence {
-    /// Every hour at :00.
     Hourly,
-    /// 00:00, 06:00, 12:00, 18:00 UTC.
     Every6h,
-    /// 00:00, 12:00 UTC.
     Every12h,
-    /// Once per day at 06:00 UTC.
     Daily,
-    /// No automatic sync.
     Manual,
 }
 
 impl SyncCadence {
-    /// Default cadence for the TMO integration when no row exists yet.
     pub const fn default_for_tmo() -> Self {
-        SyncCadence::Every6h
+        Self::Daily
     }
 
-    /// Canonical lowercase string persisted in the DB and sent by the UI.
-    pub fn as_str(&self) -> &'static str {
+    pub const fn as_str(self) -> &'static str {
         match self {
-            SyncCadence::Hourly => "hourly",
-            SyncCadence::Every6h => "every_6h",
-            SyncCadence::Every12h => "every_12h",
-            SyncCadence::Daily => "daily",
-            SyncCadence::Manual => "manual",
+            Self::Hourly => "hourly",
+            Self::Every6h => "every_6h",
+            Self::Every12h => "every_12h",
+            Self::Daily => "daily",
+            Self::Manual => "manual",
         }
     }
 
-    /// Parse a stored cadence value. Accepts the canonical enum strings, a few
-    /// common aliases, and legacy 5-field cron expressions (which we map to
-    /// the closest enum value so migration is automatic — we never execute
-    /// arbitrary cron anymore).
     pub fn parse(raw: &str) -> Option<Self> {
         let trimmed = raw.trim();
         if trimmed.is_empty() {
-            return Some(SyncCadence::Manual);
+            return Some(Self::Manual);
         }
-        let lower = trimmed.to_ascii_lowercase();
-        match lower.as_str() {
-            "manual" | "off" | "disabled" => Some(SyncCadence::Manual),
-            "hourly" | "every_hour" | "1h" => Some(SyncCadence::Hourly),
-            "every_6h" | "6h" | "4x_daily" | "every_6_hours" => Some(SyncCadence::Every6h),
-            "every_12h" | "12h" | "2x_daily" | "every_12_hours" => Some(SyncCadence::Every12h),
-            "daily" | "1x_daily" | "24h" | "every_day" => Some(SyncCadence::Daily),
-            _ => Self::from_legacy_cron(&lower),
+        match trimmed.to_ascii_lowercase().as_str() {
+            "manual" | "off" | "disabled" => Some(Self::Manual),
+            "hourly" | "every_hour" | "1h" => Some(Self::Hourly),
+            "every_6h" | "6h" | "4x_daily" | "every_6_hours" => Some(Self::Every6h),
+            "every_12h" | "12h" | "2x_daily" | "every_12_hours" => Some(Self::Every12h),
+            "daily" | "1x_daily" | "24h" | "every_day" => Some(Self::Daily),
+            legacy => Self::from_legacy_cron(legacy),
         }
     }
 
-    /// Best-effort mapping from a 5-field cron expression to one of our
-    /// supported cadences. Used only on read to migrate rows written before
-    /// the enum was introduced. Unknown patterns fall back to `Daily` rather
-    /// than `Manual` because a row with *any* cron was clearly meant to run.
-    fn from_legacy_cron(expr: &str) -> Option<Self> {
-        let fields: Vec<&str> = expr.split_whitespace().collect();
+    fn from_legacy_cron(expression: &str) -> Option<Self> {
+        let fields = expression.split_whitespace().collect::<Vec<_>>();
         if fields.len() != 5 {
             return None;
         }
-        let (_min, hour, dom, month, dow) = (fields[0], fields[1], fields[2], fields[3], fields[4]);
-        // Only accept "every day" shapes.
-        if dom != "*" || month != "*" || dow != "*" {
-            return Some(SyncCadence::Daily);
+        let hour = fields[1];
+        if fields[2..] != ["*", "*", "*"] {
+            return Some(Self::Daily);
         }
         match hour {
-            "*" => Some(SyncCadence::Hourly),
-            "*/6" | "0,6,12,18" => Some(SyncCadence::Every6h),
-            "*/12" | "0,12" => Some(SyncCadence::Every12h),
-            _ => Some(SyncCadence::Daily),
+            "*" => Some(Self::Hourly),
+            "*/6" | "0,6,12,18" => Some(Self::Every6h),
+            "*/12" | "0,12" => Some(Self::Every12h),
+            _ => Some(Self::Daily),
         }
     }
 
-    /// Underlying 7-field cron expression used to compute fire times. For
-    /// `Manual` there is no schedule.
-    fn cron(&self) -> Option<&'static str> {
+    /// Most recent deterministic slot at or before `now`. Cron redelivery for
+    /// this slot is harmless because `sync_log(connection_slug, scheduled_for)`
+    /// is unique. If invocations were absent for multiple slots, the newest
+    /// slot collapses those gaps into one full refresh.
+    pub fn most_recent_slot(self, now: OffsetDateTime) -> Option<OffsetDateTime> {
+        let period_hours = match self {
+            Self::Hourly => 1_i64,
+            Self::Every6h => 6,
+            Self::Every12h => 12,
+            Self::Daily => 24,
+            Self::Manual => return None,
+        };
+        let offset_hours = if self == Self::Daily { 6_i64 } else { 0 };
+        let period_seconds = period_hours * 60 * 60;
+        let offset_seconds = offset_hours * 60 * 60;
+        let shifted = now.unix_timestamp() - offset_seconds;
+        let slot_seconds = shifted.div_euclid(period_seconds) * period_seconds + offset_seconds;
+        OffsetDateTime::from_unix_timestamp(slot_seconds).ok()
+    }
+
+    /// Next deterministic slot strictly after `now`.
+    pub fn next_slot(self, now: OffsetDateTime) -> Option<OffsetDateTime> {
+        let period = match self {
+            Self::Hourly => Duration::hours(1),
+            Self::Every6h => Duration::hours(6),
+            Self::Every12h => Duration::hours(12),
+            Self::Daily => Duration::days(1),
+            Self::Manual => return None,
+        };
+        self.most_recent_slot(now)?.checked_add(period)
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum SchedulePreparation {
+    NotConfigured,
+    Manual,
+    Due {
+        scheduled_for: String,
+        next_scheduled_at: String,
+    },
+}
+
+#[derive(Debug)]
+enum SchedulerError {
+    InvalidCadence,
+    Operation(OperationError),
+    Storage(anyhow::Error),
+}
+
+impl fmt::Display for SchedulerError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            SyncCadence::Hourly => Some("0 0 * * * * *"),
-            SyncCadence::Every6h => Some("0 0 0,6,12,18 * * * *"),
-            SyncCadence::Every12h => Some("0 0 0,12 * * * *"),
-            SyncCadence::Daily => Some("0 0 6 * * * *"),
-            SyncCadence::Manual => None,
+            Self::InvalidCadence => formatter.write_str("the TMO sync cadence is invalid"),
+            Self::Operation(error) => write!(formatter, "scheduler operation error: {error}"),
+            Self::Storage(error) => write!(formatter, "scheduler storage error: {error:#}"),
         }
-    }
-
-    fn schedule(&self) -> Option<Schedule> {
-        self.cron().and_then(|expr| Schedule::from_str(expr).ok())
-    }
-
-    /// The most recent scheduled fire time at or before `now`. Used to detect
-    /// a missed run that happened while the process was down.
-    pub fn previous_fire(&self, now: DateTime<Utc>) -> Option<DateTime<Utc>> {
-        let schedule = self.schedule()?;
-        // `cron::Schedule` doesn't offer a direct "previous" iterator, so we
-        // walk forward from a point ~2 hours before `now` and take the last
-        // fire time that's <= now. Our cadences all fire at least every 24h,
-        // but we back off further just to be safe.
-        let start = now - Duration::hours(25);
-        let mut last = None;
-        for fire in schedule.after(&start).take(200) {
-            if fire > now {
-                break;
-            }
-            last = Some(fire);
-        }
-        last
-    }
-
-    /// The next fire time strictly after `now`.
-    pub fn next_fire(&self, now: DateTime<Utc>) -> Option<DateTime<Utc>> {
-        self.schedule()?.after(&now).next()
     }
 }
 
-/// How far back on startup we look for a missed scheduled slot and re-fire it.
-const MISSED_RUN_WINDOW_HOURS: i64 = 2;
-
-/// Background loop that checks integration cadences and spawns syncs when due.
-/// Runs forever — call via `tokio::spawn` at startup.
-pub async fn run(state: Arc<AppState>) {
-    tracing::info!("scheduler: started");
-
-    // One-time upgrade: if the TMO connection exists with the legacy 'manual'
-    // cadence, bump it to every_6h. No-op otherwise.
-    if let Err(e) = crate::db::integrations::ensure_tmo_default_cadence(&state.db).await {
-        tracing::warn!("scheduler: failed to ensure TMO default cadence: {e}");
-    }
-
-    // On boot, look for scheduled connections whose most recent cron fire
-    // happened within the last `MISSED_RUN_WINDOW_HOURS` *and* that hasn't
-    // already been covered by a later successful sync_log. Fire those
-    // immediately before entering the steady-state tick loop.
-    if let Err(e) = backfill_missed_runs(&state.db).await {
-        tracing::error!("scheduler: backfill failed: {e}");
-    }
-
-    loop {
-        let next_sleep = match tick(&state.db).await {
-            Ok(dur) => dur,
-            Err(e) => {
-                tracing::error!("scheduler: tick error: {e}");
-                tokio::time::Duration::from_secs(60)
-            }
-        };
-
-        tracing::debug!(
-            "scheduler: sleeping {}s until next check",
-            next_sleep.as_secs()
-        );
-        tokio::time::sleep(next_sleep).await;
+impl Error for SchedulerError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::InvalidCadence => None,
+            Self::Operation(error) => Some(error),
+            Self::Storage(error) => Some(error.as_ref()),
+        }
     }
 }
 
-async fn backfill_missed_runs(pool: &PgPool) -> anyhow::Result<()> {
-    let now = Utc::now();
-    let connections = crate::db::integrations::list_scheduled_connections(pool).await;
+/// Intentionally mutating GET invoked only by Vercel Cron. Secret auth and the
+/// durable scheduler write gate run in the outer middleware before this code.
+/// Provider work remains inline; the invocation never spawns or queues work.
+pub async fn run_cron(
+    Extension(context): Extension<AppContext>,
+    Extension(cipher): Extension<Arc<CredentialCipher>>,
+) -> Response {
+    run_cron_at(context, cipher, OffsetDateTime::now_utc()).await
+}
 
-    for (slug, raw_cadence) in connections {
-        let Some(cadence) = SyncCadence::parse(&raw_cadence) else {
-            tracing::warn!(
-                "scheduler: unknown cadence '{raw_cadence}' for '{slug}' — skipping backfill"
+async fn run_cron_at(
+    context: AppContext,
+    cipher: Arc<CredentialCipher>,
+    now: OffsetDateTime,
+) -> Response {
+    let preparation = match prepare_tmo_schedule(&context, now).await {
+        Ok(preparation) => preparation,
+        Err(SchedulerError::InvalidCadence) => {
+            return cron_error(
+                StatusCode::CONFLICT,
+                "invalid_cadence",
+                "The TMO synchronization cadence is not supported.",
+                false,
             );
-            continue;
-        };
-        if matches!(cadence, SyncCadence::Manual) {
-            continue;
         }
-        let Some(prev) = cadence.previous_fire(now) else {
-            continue;
-        };
-
-        // Only consider slots missed within the recent window — we don't want
-        // to fire syncs for weeks-old gaps.
-        if (now - prev).num_hours() > MISSED_RUN_WINDOW_HOURS {
-            continue;
-        }
-
-        let last_success = crate::db::integrations::last_successful_sync_started_at(pool, &slug)
-            .await;
-
-        let missed = match last_success {
-            Some(ts) => ts < prev,
-            None => true,
-        };
-
-        if missed {
-            tracing::info!(
-                "scheduler: backfilling missed run for '{slug}' (prev fire {prev}, last success \
-                 {last_success:?})"
+        Err(SchedulerError::Operation(OperationError::ReadOnly)) => {
+            return cron_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "read_only",
+                "Writes are temporarily disabled.",
+                true,
             );
-            let pool_clone = pool.clone();
-            let slug_clone = slug.clone();
-            tokio::spawn(async move {
-                if let Err(e) = run_scheduled_sync(&pool_clone, &slug_clone).await {
-                    tracing::error!("scheduler: backfill sync failed for '{slug_clone}': {e}");
-                }
-            });
         }
-    }
-    Ok(())
-}
-
-/// One tick: check all scheduled connections, spawn syncs for any that are
-/// due, persist `next_scheduled_at` for observability, and return how long to
-/// sleep until the earliest next fire time.
-async fn tick(pool: &PgPool) -> anyhow::Result<tokio::time::Duration> {
-    let connections = crate::db::integrations::list_scheduled_connections(pool).await;
-
-    if connections.is_empty() {
-        // Nothing scheduled — check again in 5 minutes in case someone adds one.
-        return Ok(tokio::time::Duration::from_secs(300));
-    }
-
-    let now = Utc::now();
-    let mut earliest_next = None;
-
-    for (slug, raw_cadence) in &connections {
-        let Some(cadence) = SyncCadence::parse(raw_cadence) else {
-            tracing::warn!("scheduler: invalid cadence '{raw_cadence}' for {slug}");
-            continue;
-        };
-        if matches!(cadence, SyncCadence::Manual) {
-            continue;
+        Err(SchedulerError::Operation(OperationError::SchedulerDisabled)) => {
+            return cron_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "scheduler_disabled",
+                "Scheduled synchronization is disabled.",
+                true,
+            );
         }
-
-        let Some(next) = cadence.next_fire(now) else {
-            continue;
-        };
-
-        // Fire if the previous scheduled slot was within the last 60s — that
-        // means we woke up right on it.
-        let should_fire = cadence
-            .previous_fire(now)
-            .is_some_and(|prev| (now - prev).num_seconds() < 60);
-
-        // Persist the next fire time for UI observability. Failures here are
-        // not fatal — it's just a display column.
-        let next_iso = next.to_rfc3339();
-        if let Err(e) = crate::db::integrations::update_connection_next_scheduled_at(
-            pool,
-            slug,
-            Some(&next_iso),
-        )
-        .await
-        {
-            tracing::debug!("scheduler: failed to persist next_scheduled_at for '{slug}': {e}");
+        Err(SchedulerError::Operation(error)) => {
+            tracing::error!(%error, "cron could not recheck operation control");
+            return cron_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "service_unavailable",
+                "Scheduled synchronization is temporarily unavailable.",
+                true,
+            );
         }
-
-        if should_fire {
-            tracing::info!("scheduler: triggering sync for '{slug}'");
-            let pool_clone = pool.clone();
-            let slug_clone = slug.clone();
-            tokio::spawn(async move {
-                if let Err(e) = run_scheduled_sync(&pool_clone, &slug_clone).await {
-                    tracing::error!("scheduler: sync failed for '{slug_clone}': {e}");
-                }
-            });
+        Err(SchedulerError::Storage(error)) => {
+            tracing::error!(%error, "cron could not prepare the TMO schedule");
+            return cron_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "service_unavailable",
+                "Scheduled synchronization is temporarily unavailable.",
+                true,
+            );
         }
-
-        match earliest_next {
-            None => earliest_next = Some(next),
-            Some(ref existing) if next < *existing => earliest_next = Some(next),
-            _ => {}
-        }
-    }
-
-    // Sleep until the earliest next fire, with a small safety margin. Cap at
-    // 5 minutes so newly-added schedules get picked up in reasonable time.
-    let sleep_secs = earliest_next
-        .map(|next| {
-            let delta = (next - now).num_seconds().max(5);
-            (delta as u64).min(300)
-        })
-        .unwrap_or(300);
-
-    // Align to the minute when the next fire is close, so we don't wake up a
-    // fraction of a second late and miss the 60s window.
-    let aligned = if sleep_secs < 120 {
-        let now_secs = now.second() as u64;
-        if now_secs == 0 { sleep_secs } else { sleep_secs + 1 }
-    } else {
-        sleep_secs
     };
 
-    Ok(tokio::time::Duration::from_secs(aligned))
-}
+    let SchedulePreparation::Due {
+        scheduled_for,
+        next_scheduled_at,
+    } = preparation
+    else {
+        return match preparation {
+            SchedulePreparation::NotConfigured => (
+                StatusCode::CONFLICT,
+                Json(json!({
+                    "outcome": "not_configured",
+                    "provider": TMO_CONNECTION_SLUG,
+                    "message": "The TMO integration is not configured.",
+                })),
+            )
+                .into_response(),
+            SchedulePreparation::Manual => (
+                StatusCode::OK,
+                Json(json!({
+                    "outcome": "manual",
+                    "provider": TMO_CONNECTION_SLUG,
+                    "scheduled_for": null,
+                    "next_scheduled_at": null,
+                })),
+            )
+                .into_response(),
+            SchedulePreparation::Due { .. } => unreachable!("due preparation was matched above"),
+        };
+    };
 
-async fn run_scheduled_sync(pool: &PgPool, slug: &str) -> anyhow::Result<()> {
-    match slug {
-        "tmo" => {
-            let summary = crate::tmo::sync::run_full_sync(pool).await?;
-            tracing::info!(
-                "scheduler: tmo sync complete — {} loans, {} payments",
-                summary.loans_upserted,
-                summary.events_upserted
+    let provider_factory = DirectTmoProviderFactory;
+    let clock = SystemSyncClock;
+    let service = TmoSyncService::production(&context, &cipher, &provider_factory, &clock);
+    match service.run_scheduled(&scheduled_for).await {
+        Ok(execution) => cron_execution_response(
+            execution,
+            scheduled_for.as_str(),
+            next_scheduled_at.as_str(),
+        ),
+        Err(error) => {
+            tracing::error!(
+                failure_class = error.class_code(),
+                "cron could not coordinate the TMO synchronization"
             );
-        }
-        other => {
-            tracing::warn!("scheduler: no sync implementation for '{other}'");
+            cron_error(
+                error.http_status(),
+                error.class_code(),
+                error.public_message(),
+                matches!(error, SyncRuntimeError::Storage(_)),
+            )
         }
     }
-    Ok(())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+async fn prepare_tmo_schedule(
+    context: &AppContext,
+    now: OffsetDateTime,
+) -> Result<SchedulePreparation, SchedulerError> {
+    let connection = context
+        .connection()
+        .await
+        .map_err(SchedulerError::Storage)?;
+    let transaction = connection
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .await
+        .map_err(|error| SchedulerError::Storage(error.into()))?;
+    OperationRepository::new(&transaction)
+        .require_scheduler_enabled()
+        .await
+        .map_err(SchedulerError::Operation)?;
+    let integration = IntegrationRepository::new(&transaction)
+        .connection_by_slug(TMO_CONNECTION_SLUG)
+        .await
+        .map_err(|error| SchedulerError::Storage(error.into()))?;
+    let Some(integration) = integration else {
+        transaction
+            .commit()
+            .await
+            .map_err(|error| SchedulerError::Storage(error.into()))?;
+        return Ok(SchedulePreparation::NotConfigured);
+    };
 
-    #[test]
-    fn parse_canonical() {
-        assert_eq!(SyncCadence::parse("hourly"), Some(SyncCadence::Hourly));
-        assert_eq!(SyncCadence::parse("every_6h"), Some(SyncCadence::Every6h));
-        assert_eq!(SyncCadence::parse("every_12h"), Some(SyncCadence::Every12h));
-        assert_eq!(SyncCadence::parse("daily"), Some(SyncCadence::Daily));
-        assert_eq!(SyncCadence::parse("manual"), Some(SyncCadence::Manual));
-        assert_eq!(SyncCadence::parse(""), Some(SyncCadence::Manual));
+    let cadence = SyncCadence::parse(&integration.sync_cadence);
+    let next = cadence.and_then(|cadence| cadence.next_slot(now));
+    let updated_at = format_utc_millis(now);
+    let next_scheduled_at = next.map(format_utc_millis);
+    IntegrationWriteRepository::new(&transaction)
+        .set_next_scheduled_at(
+            TMO_CONNECTION_SLUG,
+            next_scheduled_at.as_deref(),
+            &updated_at,
+        )
+        .await
+        .map_err(|error| SchedulerError::Storage(error.into()))?;
+    transaction
+        .commit()
+        .await
+        .map_err(|error| SchedulerError::Storage(error.into()))?;
+
+    let Some(cadence) = cadence else {
+        return Err(SchedulerError::InvalidCadence);
+    };
+    if cadence == SyncCadence::Manual {
+        return Ok(SchedulePreparation::Manual);
     }
+    let scheduled_for = cadence
+        .most_recent_slot(now)
+        .map(format_utc_millis)
+        .ok_or_else(|| {
+            SchedulerError::Storage(anyhow::anyhow!("could not calculate the current UTC slot"))
+        })?;
+    let next_scheduled_at = next_scheduled_at.ok_or_else(|| {
+        SchedulerError::Storage(anyhow::anyhow!("could not calculate the next UTC slot"))
+    })?;
+    Ok(SchedulePreparation::Due {
+        scheduled_for,
+        next_scheduled_at,
+    })
+}
 
-    #[test]
-    fn parse_legacy_cron_daily() {
-        // "0 21 * * *" — once daily at 9pm UTC, the pre-fix TMO value.
-        assert_eq!(SyncCadence::parse("0 21 * * *"), Some(SyncCadence::Daily));
-    }
-
-    #[test]
-    fn parse_legacy_cron_hourly() {
-        assert_eq!(SyncCadence::parse("0 * * * *"), Some(SyncCadence::Hourly));
-    }
-
-    #[test]
-    fn parse_legacy_cron_every_6h() {
-        assert_eq!(
-            SyncCadence::parse("0 */6 * * *"),
-            Some(SyncCadence::Every6h)
+fn cron_execution_response(
+    execution: SyncExecution,
+    scheduled_for: &str,
+    next_scheduled_at: &str,
+) -> Response {
+    let (status, outcome, retry_policy, retry_after) = match &execution {
+        SyncExecution::Completed(_) => (StatusCode::OK, "completed", "none", false),
+        SyncExecution::Failed { .. } => (
+            execution.http_status(),
+            "failed",
+            "next_scheduled_slot_or_manual",
+            false,
+        ),
+        SyncExecution::AlreadyRunning(_) => (
+            StatusCode::ACCEPTED,
+            "already_running",
+            "safe_redelivery_after_retry_after",
+            true,
+        ),
+        SyncExecution::AlreadyScheduled(run) if run.status == SyncRunStatus::Running => (
+            StatusCode::ACCEPTED,
+            "slot_already_running",
+            "safe_redelivery_after_retry_after",
+            true,
+        ),
+        SyncExecution::AlreadyScheduled(run) if run.status == SyncRunStatus::Error => (
+            StatusCode::OK,
+            "failed_slot_already_recorded",
+            "next_scheduled_slot_or_manual",
+            false,
+        ),
+        SyncExecution::AlreadyScheduled(_) => {
+            (StatusCode::OK, "slot_already_completed", "none", false)
+        }
+        SyncExecution::CoveredBySuccess(_) => (StatusCode::OK, "covered_by_success", "none", false),
+    };
+    let mut response = (
+        status,
+        Json(json!({
+            "outcome": outcome,
+            "provider": TMO_CONNECTION_SLUG,
+            "scheduled_for": scheduled_for,
+            "next_scheduled_at": next_scheduled_at,
+            "retry_policy": retry_policy,
+            "run": execution.run(),
+        })),
+    )
+        .into_response();
+    if retry_after {
+        response.headers_mut().insert(
+            header::RETRY_AFTER,
+            HeaderValue::from_static(RETRY_AFTER_SECONDS),
         );
+    }
+    response
+}
+
+fn cron_error(status: StatusCode, code: &str, message: &str, retry_after: bool) -> Response {
+    let mut response = (
+        status,
+        Json(json!({
+            "error": code,
+            "message": message,
+        })),
+    )
+        .into_response();
+    if retry_after {
+        response.headers_mut().insert(
+            header::RETRY_AFTER,
+            HeaderValue::from_static(RETRY_AFTER_SECONDS),
+        );
+    }
+    response
+}
+
+fn format_utc_millis(value: OffsetDateTime) -> String {
+    format!(
+        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}.{:03}Z",
+        value.year(),
+        value.month() as u8,
+        value.day(),
+        value.hour(),
+        value.minute(),
+        value.second(),
+        value.millisecond(),
+    )
+}
+
+#[cfg(all(test, feature = "local-db"))]
+mod tests {
+    use axum::body::to_bytes;
+    use libsql::{Builder, params};
+    use time::{Date, Month, Time};
+
+    use super::*;
+    use crate::{operations::SyncRun, sync_runtime::SyncFailureClass};
+
+    fn at(year: i32, month: Month, day: u8, hour: u8, minute: u8) -> OffsetDateTime {
+        Date::from_calendar_date(year, month, day)
+            .unwrap()
+            .with_time(Time::from_hms(hour, minute, 0).unwrap())
+            .assume_utc()
+    }
+
+    async fn context_with_cadence(cadence: &str) -> AppContext {
+        let database = Builder::new_local(":memory:").build().await.unwrap();
+        let context = AppContext::from_database(database).await.unwrap();
+        context
+            .connection()
+            .await
+            .unwrap()
+            .execute(
+                "INSERT INTO intg_integration_connection (slug, name, provider, sync_cadence) \
+                 VALUES ('tmo', 'The Mortgage Office', 'mortgage_office', ?1)",
+                params![cadence],
+            )
+            .await
+            .unwrap();
+        let connection = context.connection().await.unwrap();
+        let operations = OperationRepository::new(&connection);
+        operations
+            .enable_writes("2026-07-14T13:00:00.000Z")
+            .await
+            .unwrap();
+        operations
+            .set_scheduler_enabled(true, "2026-07-14T13:00:01.000Z")
+            .await
+            .unwrap();
+        context
+    }
+
+    #[test]
+    fn parses_canonical_alias_and_legacy_cadences() {
+        assert_eq!(SyncCadence::parse("hourly"), Some(SyncCadence::Hourly));
+        assert_eq!(SyncCadence::parse("6h"), Some(SyncCadence::Every6h));
+        assert_eq!(SyncCadence::parse("2x_daily"), Some(SyncCadence::Every12h));
+        assert_eq!(SyncCadence::parse("24h"), Some(SyncCadence::Daily));
+        assert_eq!(SyncCadence::parse(""), Some(SyncCadence::Manual));
         assert_eq!(
             SyncCadence::parse("0 0,6,12,18 * * *"),
             Some(SyncCadence::Every6h)
         );
+        assert_eq!(SyncCadence::parse("0 21 * * *"), Some(SyncCadence::Daily));
+        assert_eq!(SyncCadence::parse("sometimes"), None);
     }
 
     #[test]
-    fn next_fire_is_in_future() {
-        let now = Utc::now();
-        let next = SyncCadence::Every6h.next_fire(now).unwrap();
-        assert!(next > now);
+    fn slots_are_deterministic_at_and_between_boundaries() {
+        let now = at(2026, Month::July, 14, 13, 25);
+        assert_eq!(
+            format_utc_millis(SyncCadence::Hourly.most_recent_slot(now).unwrap()),
+            "2026-07-14T13:00:00.000Z"
+        );
+        assert_eq!(
+            format_utc_millis(SyncCadence::Every6h.most_recent_slot(now).unwrap()),
+            "2026-07-14T12:00:00.000Z"
+        );
+        assert_eq!(
+            format_utc_millis(SyncCadence::Every6h.next_slot(now).unwrap()),
+            "2026-07-14T18:00:00.000Z"
+        );
+        assert_eq!(
+            format_utc_millis(
+                SyncCadence::Every12h
+                    .most_recent_slot(at(2026, Month::July, 14, 0, 0))
+                    .unwrap()
+            ),
+            "2026-07-14T00:00:00.000Z"
+        );
+        assert_eq!(
+            format_utc_millis(
+                SyncCadence::Daily
+                    .most_recent_slot(at(2026, Month::July, 14, 5, 59))
+                    .unwrap()
+            ),
+            "2026-07-13T06:00:00.000Z"
+        );
+        assert_eq!(
+            format_utc_millis(
+                SyncCadence::Daily
+                    .most_recent_slot(at(2026, Month::July, 14, 6, 0))
+                    .unwrap()
+            ),
+            "2026-07-14T06:00:00.000Z"
+        );
+        assert!(SyncCadence::Manual.most_recent_slot(now).is_none());
     }
 
-    #[test]
-    fn previous_fire_is_in_past() {
-        let now = Utc::now();
-        let prev = SyncCadence::Every6h.previous_fire(now).unwrap();
-        assert!(prev <= now);
-        assert!((now - prev).num_hours() < 7);
+    #[tokio::test]
+    async fn preparation_persists_the_truthful_next_slot_transactionally() {
+        let context = context_with_cadence("every_6h").await;
+        let decision = prepare_tmo_schedule(&context, at(2026, Month::July, 14, 13, 25))
+            .await
+            .unwrap();
+        assert_eq!(
+            decision,
+            SchedulePreparation::Due {
+                scheduled_for: "2026-07-14T12:00:00.000Z".into(),
+                next_scheduled_at: "2026-07-14T18:00:00.000Z".into(),
+            }
+        );
+        let integration = IntegrationRepository::new(&context.connection().await.unwrap())
+            .connection_by_slug("tmo")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            integration.next_scheduled_at.as_deref(),
+            Some("2026-07-14T18:00:00.000Z")
+        );
+    }
+
+    #[tokio::test]
+    async fn manual_and_invalid_cadences_clear_a_stale_next_slot() {
+        for (cadence, is_error) in [("manual", false), ("not-a-cadence", true)] {
+            let context = context_with_cadence(cadence).await;
+            context
+                .connection()
+                .await
+                .unwrap()
+                .execute(
+                    "UPDATE intg_integration_connection \
+                     SET next_scheduled_at = '2026-07-14T18:00:00.000Z' WHERE slug = 'tmo'",
+                    (),
+                )
+                .await
+                .unwrap();
+            let result = prepare_tmo_schedule(&context, at(2026, Month::July, 14, 13, 25)).await;
+            assert_eq!(result.is_err(), is_error);
+            if !is_error {
+                assert_eq!(result.unwrap(), SchedulePreparation::Manual);
+            }
+            let integration = IntegrationRepository::new(&context.connection().await.unwrap())
+                .connection_by_slug("tmo")
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(integration.next_scheduled_at, None);
+        }
+    }
+
+    fn scheduled_run(status: SyncRunStatus) -> SyncRun {
+        SyncRun {
+            id: 41,
+            connection_slug: "tmo".into(),
+            scheduled_for: Some("2026-07-14T12:00:00.000Z".into()),
+            started_at: "2026-07-14T12:00:01.000Z".into(),
+            finished_at: (status != SyncRunStatus::Running)
+                .then(|| "2026-07-14T12:00:02.000Z".into()),
+            status,
+            error_message: (status == SyncRunStatus::Error)
+                .then(|| "TMO could not complete the synchronization request.".into()),
+            endpoints_hit: None,
+            events_upserted: 0,
+            loans_upserted: 0,
+            snapshots_created: 0,
+        }
+    }
+
+    #[tokio::test]
+    async fn failed_slot_responses_state_the_next_slot_or_manual_retry_policy() {
+        let failed = cron_execution_response(
+            SyncExecution::Failed {
+                run: scheduled_run(SyncRunStatus::Error),
+                class: SyncFailureClass::Provider,
+            },
+            "2026-07-14T12:00:00.000Z",
+            "2026-07-14T18:00:00.000Z",
+        );
+        assert_eq!(failed.status(), StatusCode::BAD_GATEWAY);
+        assert!(failed.headers().get(header::RETRY_AFTER).is_none());
+        let body = to_bytes(failed.into_body(), usize::MAX).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(body["outcome"], "failed");
+        assert_eq!(body["retry_policy"], "next_scheduled_slot_or_manual");
+
+        let redelivery = cron_execution_response(
+            SyncExecution::AlreadyScheduled(scheduled_run(SyncRunStatus::Error)),
+            "2026-07-14T12:00:00.000Z",
+            "2026-07-14T18:00:00.000Z",
+        );
+        assert_eq!(redelivery.status(), StatusCode::OK);
+        let body = to_bytes(redelivery.into_body(), usize::MAX).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(body["outcome"], "failed_slot_already_recorded");
+        assert_eq!(body["retry_policy"], "next_scheduled_slot_or_manual");
+    }
+
+    #[tokio::test]
+    async fn running_slot_response_is_retryable_without_claiming_again() {
+        let response = cron_execution_response(
+            SyncExecution::AlreadyScheduled(scheduled_run(SyncRunStatus::Running)),
+            "2026-07-14T12:00:00.000Z",
+            "2026-07-14T18:00:00.000Z",
+        );
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+        assert_eq!(response.headers()[header::RETRY_AFTER], RETRY_AFTER_SECONDS);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(body["outcome"], "slot_already_running");
     }
 }

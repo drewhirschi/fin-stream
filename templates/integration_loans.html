@@ -1,126 +1,54 @@
 {% extends "integration_base.html" %}
 
-{% block integration_breadcrumb_suffix %}
-<span class="label-dim">/</span>
-<span>Loans</span>
-{% endblock %}
+{% block integration_breadcrumb_suffix %}<span class="label-dim">/</span><span>Loans</span>{% endblock %}
 
 {% block integration_page_content %}
 <div class="card bg-base-100 shadow-sm border border-base-300">
     <div class="card-body">
         <div class="flex items-center justify-between gap-4 mb-2">
-            <div>
-                <h2 class="card-title">Loans</h2>
-                <p class="label-dim text-sm">TMO loan inventory rendered inside Trust Deeds.</p>
-            </div>
+            <div><h2 class="card-title">Loans</h2><p class="label-dim text-sm">TMO loan inventory rendered inside Trust Deeds.</p></div>
             <a href="/integrations/{{ connection.slug }}/debug" class="link link-primary text-sm">Open debug data</a>
         </div>
-
         {% if loans.is_empty() %}
-        <div class="alert alert-info">
-            No loan data yet. <a href="/integrations/{{ connection.slug }}/sync" class="link">Run a sync</a> to pull data from {{ connection.name }}.
-        </div>
+        <div class="alert alert-info">No loan data has been imported yet.</div>
         {% else %}
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             {% for loan in loans %}
-            <a href="/integrations/{{ connection.slug }}/loans/{{ loan.loan_account }}"
-               class="interactive-card card overflow-hidden bg-base-100 shadow-sm border border-base-300 no-underline">
+            <a href="/integrations/{{ connection.slug }}/loans/{{ loan.loan_account }}" class="interactive-card card overflow-hidden bg-base-100 shadow-sm border border-base-300 no-underline">
                 {% match loan.featured_image_url %}
-                    {% when Some with (image_url) %}
-                    <div class="relative h-48 w-full overflow-hidden bg-base-200">
-                        <img src="{{ image_url }}"
-                             alt="{{ loan.borrower_name.as_deref().unwrap_or("Loan property") }}"
-                             class="h-full w-full object-cover" />
-                        <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-black/35 to-transparent"></div>
-                        <div class="absolute left-4 right-4 top-4 flex items-start justify-between gap-3">
-                            <div class="badge badge-neutral border-white/20 bg-black/45 text-white font-mono">{{ loan.loan_account }}</div>
-                            {% match loan.is_delinquent %}
-                                {% when Some with (1) %}<span class="badge badge-error">Late</span>
-                                {% when _ %}<span class="badge badge-success">Current</span>
-                            {% endmatch %}
-                        </div>
-                        <div class="absolute inset-x-0 bottom-0 px-4 pb-4 text-white [text-shadow:0_2px_10px_rgba(0,0,0,0.6)]">
-                            <h3 class="card-title text-lg text-white">
-                                {{ loan.property_address.as_deref().unwrap_or("") }},
-                                {{ loan.property_city.as_deref().unwrap_or("") }}
-                                {{ loan.property_state.as_deref().unwrap_or("") }}
-                            </h3>
-                            <p class="mt-1 text-sm text-white/92">{{ loan.borrower_name.as_deref().unwrap_or("Unknown") }}</p>
-                        </div>
+                {% when Some with (image_url) %}
+                <div class="relative h-48 w-full overflow-hidden bg-base-200">
+                    <img src="{{ image_url }}" alt="{{ loan.borrower_name.as_deref().unwrap_or("Loan property") }}" class="h-full w-full object-cover">
+                    <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-black/35 to-transparent"></div>
+                    <div class="absolute left-4 right-4 top-4 flex items-start justify-between gap-3">
+                        <div class="badge badge-neutral border-white/20 bg-black/45 text-white font-mono">{{ loan.loan_account }}</div>
+                        {% if loan.is_delinquent == Some(1) %}<span class="badge badge-error">Late</span>{% else %}<span class="badge badge-success">Current</span>{% endif %}
                     </div>
-                    {% when None %}
-                    <div class="card-body pb-4">
-                        <div class="flex justify-between items-start gap-3">
-                            <div>
-                                <h3 class="card-title text-base">
-                                    {{ loan.property_address.as_deref().unwrap_or("") }},
-                                    {{ loan.property_city.as_deref().unwrap_or("") }}
-                                    {{ loan.property_state.as_deref().unwrap_or("") }}
-                                </h3>
-                                <p class="label-dim text-sm">{{ loan.borrower_name.as_deref().unwrap_or("Unknown") }}</p>
-                            </div>
-                            <div class="flex flex-col items-end gap-2">
-                                <span class="badge badge-outline font-mono">{{ loan.loan_account }}</span>
-                                {% match loan.is_delinquent %}
-                                    {% when Some with (1) %}<span class="badge badge-error badge-sm">Late</span>
-                                    {% when _ %}<span class="badge badge-success badge-sm">Current</span>
-                                {% endmatch %}
-                            </div>
-                        </div>
+                    <div class="absolute inset-x-0 bottom-0 px-4 pb-4 text-white">
+                        <h3 class="card-title text-lg text-white">{{ loan.property_address.as_deref().unwrap_or("Address unavailable") }}, {{ loan.property_city.as_deref().unwrap_or("") }} {{ loan.property_state.as_deref().unwrap_or("") }}</h3>
+                        <p class="mt-1 text-sm text-white/90">{{ loan.borrower_name.as_deref().unwrap_or("Unknown") }}</p>
                     </div>
+                </div>
+                {% when None %}
+                <div class="card-body pb-4">
+                    <div class="flex justify-between items-start gap-3">
+                        <div><h3 class="card-title text-base">{{ loan.property_address.as_deref().unwrap_or("Address unavailable") }}, {{ loan.property_city.as_deref().unwrap_or("") }} {{ loan.property_state.as_deref().unwrap_or("") }}</h3><p class="label-dim text-sm">{{ loan.borrower_name.as_deref().unwrap_or("Unknown") }}</p></div>
+                        <div class="flex flex-col items-end gap-2"><span class="badge badge-outline font-mono">{{ loan.loan_account }}</span>{% if loan.is_delinquent == Some(1) %}<span class="badge badge-error badge-sm">Late</span>{% else %}<span class="badge badge-success badge-sm">Current</span>{% endif %}</div>
+                    </div>
+                </div>
                 {% endmatch %}
-
                 <div class="card-body pt-4">
                     <div class="grid grid-cols-2 gap-3 text-sm">
-                        <div>
-                            <span class="label-dim">Balance</span>
-                            <div class="font-semibold">
-                                {% match loan.principal_balance %}{% when Some with (b) %}${{ b|money }}{% when None %}—{% endmatch %}
-                            </div>
-                        </div>
-                        <div>
-                            <span class="label-dim">Rate</span>
-                            <div class="font-semibold">
-                                {% match loan.note_rate %}{% when Some with (r) %}{{ "{:.2}"|format(r) }}%{% when None %}—{% endmatch %}
-                            </div>
-                        </div>
-                        <div>
-                            <span class="label-dim">Payment</span>
-                            <div class="font-semibold">
-                                {% match loan.regular_payment %}{% when Some with (p) %}${{ p|money }}{% when None %}—{% endmatch %}
-                            </div>
-                        </div>
-                        <div>
-                            <span class="label-dim">Ownership</span>
-                            <div class="font-semibold">
-                                {% match loan.percent_owned %}{% when Some with (o) %}{{ "{:.1}"|format(o) }}%{% when None %}—{% endmatch %}
-                            </div>
-                        </div>
-                        <div>
-                            <span class="label-dim">Type</span>
-                            <div class="font-semibold">{{ loan.property_type.as_deref().unwrap_or("-") }}</div>
-                        </div>
-                        <div>
-                            <span class="label-dim">Maturity</span>
-                            <div class="font-semibold">{{ loan.maturity_date.as_deref().unwrap_or("-")|date }}</div>
-                        </div>
-                        <div>
-                            <span class="label-dim">Next Payment</span>
-                            <div class="font-semibold">{{ loan.next_payment_date.as_deref().unwrap_or("-")|date }}</div>
-                        </div>
-                        <div>
-                            <span class="label-dim">Status</span>
-                            <div>
-                                {% match loan.is_delinquent %}
-                                    {% when Some with (1) %}<span class="badge badge-error badge-sm">Late</span>
-                                    {% when _ %}<span class="badge badge-success badge-sm">Current</span>
-                                {% endmatch %}
-                            </div>
-                        </div>
+                        <div><span class="label-dim">Balance</span><div class="font-semibold">{% match loan.principal_balance %}{% when Some with (value) %}${{ value|money }}{% when None %}—{% endmatch %}</div></div>
+                        <div><span class="label-dim">Rate</span><div class="font-semibold">{% match loan.note_rate %}{% when Some with (value) %}{{ "{:.2}"|format(value) }}%{% when None %}—{% endmatch %}</div></div>
+                        <div><span class="label-dim">Payment</span><div class="font-semibold">{% match loan.regular_payment %}{% when Some with (value) %}${{ value|money }}{% when None %}—{% endmatch %}</div></div>
+                        <div><span class="label-dim">Ownership</span><div class="font-semibold">{% match loan.percent_owned %}{% when Some with (value) %}{{ "{:.1}"|format(value) }}%{% when None %}—{% endmatch %}</div></div>
+                        <div><span class="label-dim">Type</span><div class="font-semibold">{{ loan.property_type.as_deref().unwrap_or("-") }}</div></div>
+                        <div><span class="label-dim">Maturity</span><div class="font-semibold">{{ loan.maturity_date.as_deref().unwrap_or("-")|date }}</div></div>
+                        <div><span class="label-dim">Next payment</span><div class="font-semibold">{{ loan.next_payment_date.as_deref().unwrap_or("-")|date }}</div></div>
+                        <div><span class="label-dim">Status</span><div>{% if loan.is_delinquent == Some(1) %}<span class="badge badge-error badge-sm">Late</span>{% else %}<span class="badge badge-success badge-sm">Current</span>{% endif %}</div></div>
                     </div>
-                    <div class="pt-2 text-sm text-primary font-medium">
-                        Open loan
-                    </div>
+                    <div class="pt-2 text-sm text-primary font-medium">Open loan</div>
                 </div>
             </a>
             {% endfor %}

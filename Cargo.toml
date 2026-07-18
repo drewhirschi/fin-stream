@@ -2,39 +2,75 @@
 name = "trust-deeds"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.88"
+rust-version = "1.95"
+publish = false
 default-run = "trust-deeds"
 
+[features]
+default = ["remote-db", "local-server"]
+local-server = ["dep:dotenvy", "dep:tower-http"]
+local-db = ["libsql/core", "local-server"]
+remote-db = [
+    "libsql/remote",
+    "libsql/tls",
+    "nextrs/vercel",
+    "dep:vercel_runtime",
+]
+
+[[bin]]
+name = "trust-deeds"
+path = "src/main.rs"
+required-features = ["local-server"]
+
+[[bin]]
+name = "trust-deeds-bootstrap"
+path = "src/bin/bootstrap.rs"
+required-features = ["local-db"]
+
+[[bin]]
+name = "trust-deeds-ops"
+path = "src/bin/ops.rs"
+
+# Vercel's single serverless function. See vercel.json.
+[[bin]]
+name = "index"
+path = "api/index.rs"
+required-features = ["remote-db"]
+
+[build-dependencies]
+nextrs = { version = "=0.3.8", features = ["build", "tsx"] }
+
 [dependencies]
-axum = { version = "0.8", features = ["multipart"] }
-tokio = { version = "1", features = ["full"] }
-tower = "0.5"
-tower-http = { version = "0.6", features = ["fs", "trace", "compression-br", "compression-gzip", "set-header"] }
-tower-livereload = "0.9"
+aes-gcm = "0.10"
+anyhow = "1"
+argon2 = "0.5"
 askama = "0.15"
+async-trait = "0.1"
+axum = "0.8"
+base64 = "0.22"
+blake3 = "1"
+chrono = { version = "0.4", default-features = false, features = ["std"] }
+dotenvy = { version = "0.15", optional = true }
+hmac = "0.12"
+libsql = { version = "=0.9.30", default-features = false }
+nextrs = { version = "=0.3.8", default-features = false }
+rand = "0.8"
+reqwest = { version = "0.12", default-features = false, features = ["cookies", "json", "rustls-tls"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-dotenvy = "0.15"
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-sqlx = { version = "0.8", features = ["runtime-tokio", "postgres"] }
-reqwest = { version = "0.12", default-features = false, features = ["json", "cookies", "rustls-tls-webpki-roots", "charset", "http2", "macos-system-configuration"] }
-chrono = { version = "0.4", features = ["serde"] }
-anyhow = "1"
-urlencoding = "2"
-aes-gcm = "0.10"
-base64 = "0.22"
-rand = "0.8"
 sha2 = "0.10"
-hmac = "0.12"
-regex = "1"
-scraper = "0.24"
-cron = "0.15"
-aws-config = "1"
-aws-sdk-s3 = "1"
-aws-credential-types = "1"
-aws-types = "1"
-argon2 = "0.5"
-tower-sessions = "0.14"
-tower-sessions-sqlx-store = { version = "0.15", features = ["postgres"] }
-time = "0.3"
+subtle = "2"
+time = { version = "0.3", features = ["serde"] }
+tokio = { version = "1", features = ["full"] }
+tower = "0.5"
+tower-livereload = "0.9"
+tower-http = { version = "0.6", features = ["fs"], optional = true }
+tower-sessions = { version = "0.14", default-features = false, features = ["axum-core"] }
+tracing = "0.1"
+utoipa = "5"
+url = "2"
+vercel_runtime = { version = "2", features = ["axum"], optional = true }
+zeroize = "1"
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }

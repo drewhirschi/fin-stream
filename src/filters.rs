@@ -1,12 +1,55 @@
 use std::fmt::Display;
 
-use chrono::{DateTime, NaiveDate, NaiveDateTime};
-
 use askama::{Result, Values};
+use chrono::{DateTime, NaiveDate, NaiveDateTime};
 
 #[askama::filter_fn]
 pub fn money(value: impl Display, _: &dyn Values) -> Result<String> {
-    let value = value.to_string().parse::<f64>().unwrap_or(0.0);
+    Ok(format_money_value(&value.to_string()))
+}
+
+#[askama::filter_fn]
+pub fn money_input(value: impl Display, _: &dyn Values) -> Result<String> {
+    Ok(format_money_input_value(&value.to_string()))
+}
+
+fn format_money_input_value(raw: &str) -> String {
+    let value = raw.parse::<f64>().unwrap_or(0.0);
+    if value.abs() < 0.005 {
+        "0".to_owned()
+    } else {
+        format!("{value:.2}")
+    }
+}
+
+#[askama::filter_fn]
+pub fn number(value: impl Display, _: &dyn Values) -> Result<String> {
+    Ok(format_number_value(&value.to_string()))
+}
+
+fn format_number_value(raw: &str) -> String {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return raw.to_owned();
+    }
+
+    let (sign, rest) = trimmed
+        .strip_prefix('-')
+        .map_or(("", trimmed), |rest| ("-", rest));
+    let mut parts = rest.splitn(2, '.');
+    let integer = parts.next().unwrap_or_default();
+    let grouped = integer
+        .parse::<u64>()
+        .map(format_with_commas)
+        .unwrap_or_else(|_| integer.to_owned());
+    match parts.next() {
+        Some(fraction) if !fraction.is_empty() => format!("{sign}{grouped}.{fraction}"),
+        _ => format!("{sign}{grouped}"),
+    }
+}
+
+fn format_money_value(value: &str) -> String {
+    let value = value.parse::<f64>().unwrap_or(0.0);
     let is_negative = value < 0.0;
     let total_cents = (value.abs() * 100.0).round() as u64;
     let whole = total_cents / 100;
@@ -22,53 +65,9 @@ pub fn money(value: impl Display, _: &dyn Values) -> Result<String> {
     };
 
     if is_negative {
-        Ok(format!("-{formatted}"))
+        format!("-{formatted}")
     } else {
-        Ok(formatted)
-    }
-}
-
-#[askama::filter_fn]
-pub fn whole(value: impl Display, _: &dyn Values) -> Result<String> {
-    let value = value.to_string().parse::<f64>().unwrap_or(0.0);
-    let is_negative = value < 0.0;
-    let abs = value.abs().round() as u64;
-    let formatted = format_with_commas(abs);
-
-    if is_negative {
-        Ok(format!("-{formatted}"))
-    } else {
-        Ok(formatted)
-    }
-}
-
-#[askama::filter_fn]
-pub fn number(value: impl Display, _: &dyn Values) -> Result<String> {
-    let raw = value.to_string();
-    let trimmed = raw.trim();
-
-    if trimmed.is_empty() {
-        return Ok(raw);
-    }
-
-    let (sign, rest) = if let Some(rest) = trimmed.strip_prefix('-') {
-        ("-", rest)
-    } else {
-        ("", trimmed)
-    };
-
-    let mut parts = rest.splitn(2, '.');
-    let int_part = parts.next().unwrap_or_default();
-    let frac_part = parts.next();
-
-    let int_value = int_part.parse::<u64>().ok();
-    let grouped = int_value
-        .map(format_with_commas)
-        .unwrap_or_else(|| int_part.to_string());
-
-    match frac_part {
-        Some(frac) if !frac.is_empty() => Ok(format!("{sign}{grouped}.{frac}")),
-        _ => Ok(format!("{sign}{grouped}")),
+        formatted
     }
 }
 
@@ -78,7 +77,6 @@ pub fn date(value: impl AsRef<str>, _: &dyn Values) -> Result<String> {
     if value.is_empty() || value == "—" || value == "-" {
         return Ok(value.to_string());
     }
-
     Ok(format_date_value(value))
 }
 
@@ -88,61 +86,37 @@ pub fn datetime(value: impl AsRef<str>, _: &dyn Values) -> Result<String> {
     if value.is_empty() || value == "—" || value == "-" {
         return Ok(value.to_string());
     }
-
     if let Ok(parsed) = DateTime::parse_from_rfc3339(value) {
         return Ok(parsed.format("%m-%d-%Y %I:%M %p").to_string());
     }
-
     if let Ok(parsed) = NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M:%S") {
         return Ok(parsed.format("%m-%d-%Y %I:%M %p").to_string());
     }
-
     if let Ok(parsed) = NaiveDateTime::parse_from_str(value, "%Y-%m-%d %H:%M:%S") {
         return Ok(parsed.format("%m-%d-%Y %I:%M %p").to_string());
     }
-
     Ok(format_date_value(value))
 }
 
-/// Emit a `<time>` element that a small vanilla JS helper in
-/// `static/js/local-time.js` upgrades to the viewer's local timezone at
-/// DOMContentLoaded and on `htmx:afterSwap`. When JS is off, falls back to
-/// the same US `MM-DD-YYYY hh:mm AM/PM` format as `datetime`, with a "UTC"
-/// suffix so the viewer knows the timestamp is UTC-not-local.
-///
-/// Input must be a parseable RFC3339 timestamp. Non-parseable values pass
-/// through as plain text (matching `datetime`'s defensive behavior).
+/// Render an RFC3339 timestamp with a useful UTC fallback, then let the
+/// vendored local-time helper upgrade it to the viewer's timezone.
 #[askama::filter_fn]
 pub fn datetime_local(value: impl AsRef<str>, _: &dyn Values) -> Result<String> {
-    let raw = value.as_ref().trim();
+    Ok(format_datetime_local_value(value.as_ref()))
+}
+
+fn format_datetime_local_value(value: &str) -> String {
+    let raw = value.trim();
     if raw.is_empty() || raw == "—" || raw == "-" {
-        return Ok(raw.to_string());
+        return raw.to_string();
     }
-
-    let parsed = match DateTime::parse_from_rfc3339(raw) {
-        Ok(p) => p,
-        Err(_) => {
-            // Not RFC3339 — try the other shapes `datetime` accepts, then
-            // fall through to raw text so we don't blow up a page.
-            if let Ok(p) = NaiveDateTime::parse_from_str(raw, "%Y-%m-%dT%H:%M:%S") {
-                return Ok(p.format("%m-%d-%Y %I:%M %p").to_string());
-            }
-            if let Ok(p) = NaiveDateTime::parse_from_str(raw, "%Y-%m-%d %H:%M:%S") {
-                return Ok(p.format("%m-%d-%Y %I:%M %p").to_string());
-            }
-            return Ok(format_date_value(raw));
-        }
+    let Ok(parsed) = DateTime::parse_from_rfc3339(raw) else {
+        return format_date_value(raw);
     };
-
-    let utc_fallback = parsed.format("%m-%d-%Y %I:%M %p").to_string();
-    // Use the original RFC3339 string so the JS enhancer can parse with
-    // timezone info. Escape nothing — our inputs are from the DB and are
-    // already well-formed.
-    Ok(format!(
-        "<time class=\"local-time\" data-local=\"{iso}\" datetime=\"{iso}\">{fallback} UTC</time>",
-        iso = raw,
-        fallback = utc_fallback
-    ))
+    let fallback = parsed.format("%m-%d-%Y %I:%M %p");
+    format!(
+        "<time class=\"local-time\" data-local=\"{raw}\" datetime=\"{raw}\">{fallback} UTC</time>"
+    )
 }
 
 fn parse_date(value: &str) -> Option<NaiveDate> {
@@ -171,14 +145,41 @@ fn format_date_value(value: &str) -> String {
         .unwrap_or_else(|| value.to_string())
 }
 
-fn format_with_commas(n: u64) -> String {
-    let s = n.to_string();
-    let mut result = String::with_capacity(s.len() + s.len() / 3);
-    for (i, c) in s.chars().enumerate() {
-        if i > 0 && (s.len() - i) % 3 == 0 {
+fn format_with_commas(number: u64) -> String {
+    let raw = number.to_string();
+    let mut result = String::with_capacity(raw.len() + raw.len() / 3);
+    for (index, character) in raw.chars().enumerate() {
+        if index > 0 && (raw.len() - index).is_multiple_of(3) {
             result.push(',');
         }
-        result.push(c);
+        result.push(character);
     }
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn formats_display_values_consistently() {
+        assert_eq!(format_money_value("0"), "0");
+        assert_eq!(format_money_value("1200"), "1,200.00");
+        assert_eq!(format_money_value("-12.5"), "-12.50");
+        assert_eq!(format_date_value("2026-07-14"), "07-14-2026");
+    }
+
+    #[test]
+    fn formats_money_inputs_without_invalid_grouping() {
+        assert_eq!(format_money_input_value("0"), "0");
+        assert_eq!(format_money_input_value("12345.6"), "12345.60");
+    }
+
+    #[test]
+    fn groups_counts_and_emits_local_time_markup() {
+        assert_eq!(format_number_value("1234567"), "1,234,567");
+        let timestamp = format_datetime_local_value("2026-07-14T18:20:30.456Z");
+        assert!(timestamp.contains("data-local=\"2026-07-14T18:20:30.456Z\""));
+        assert!(timestamp.contains("07-14-2026 06:20 PM UTC"));
+    }
 }

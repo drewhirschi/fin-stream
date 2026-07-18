@@ -6,6 +6,12 @@
 {% block content %}
 <div class="vault" x-data="streamsManager()">
     <div class="flex flex-col gap-8">
+        <div x-cloak x-show="statusMessage" role="alert" class="surface-high p-4"
+             :style="statusKind === 'error' ? 'border-left: 3px solid var(--vault-secondary)' : 'border-left: 3px solid var(--vault-primary)'">
+            <span :style="statusKind === 'error' ? 'color: var(--vault-secondary)' : 'color: var(--vault-primary)'"
+                  x-text="statusMessage"></span>
+        </div>
+
         <section>
             <div class="flex items-end justify-between gap-4 mb-4">
                 <div>
@@ -39,8 +45,8 @@
                     </label>
                     <label class="flex flex-col gap-1">
                         <span class="label-dim">Balance</span>
-                        <input class="input input-sm bg-base-100 mono" type="number" step="0.01" name="balance"
-                               value="{% match account.balance %}{% when Some with (balance) %}{{ "{:.2}"|format(balance) }}{% when None %}{% endmatch %}">
+                        <input class="input input-sm bg-base-100 mono" type="text" inputmode="decimal" name="balance"
+                               value="{% match account.balance %}{% when Some with (balance) %}{{ balance|money }}{% when None %}{% endmatch %}">
                     </label>
                     <label class="flex items-center gap-2 text-sm">
                         <input type="checkbox" class="checkbox checkbox-sm" name="is_primary" value="1" {% if account.is_primary == 1 %}checked{% endif %}>
@@ -57,6 +63,9 @@
                         {% endmatch %}
                         {% match account.balance_updated_at %}
                         {% when Some with (updated_at) %}<span class="block">Updated {{ updated_at|datetime }}</span>
+                        {% when None %}{% endmatch %}
+                        {% match account.balance_as_of_date %}
+                        {% when Some with (as_of_date) %}<span class="block">Balance as of {{ as_of_date|date }}</span>
                         {% when None %}{% endmatch %}
                     </div>
                     <button class="emerald-pulse px-4 py-2 rounded-lg font-semibold text-sm cursor-pointer self-start" type="submit">
@@ -83,7 +92,7 @@
                     </label>
                     <label class="flex flex-col gap-1">
                         <span class="label-dim">Starting balance</span>
-                        <input class="input input-sm bg-base-100 mono" type="number" step="0.01" name="balance" placeholder="0.00">
+                        <input class="input input-sm bg-base-100 mono" type="text" inputmode="decimal" name="balance" placeholder="0.00">
                     </label>
                     <label class="flex items-center gap-2 text-sm">
                         <input type="checkbox" class="checkbox checkbox-sm" name="is_primary" value="1">
@@ -113,8 +122,8 @@
                     <div class="flex items-center justify-between gap-3">
                         <h3 class="text-lg">{{ stream.name }}</h3>
                         <div class="flex items-center gap-2">
-                            {% match stream.direction %}{% when Some with (d) %}{% if d == "out" %}<span class="chip-negative">Money out</span>{% else %}<span class="chip-positive">Money in</span>{% endif %}{% when None %}{% endmatch %}
-                            {% if stream.amount_certainty.as_deref() == Some("estimated") %}<span class="label-dim">~ estimated</span>{% endif %}
+                            {% if stream.direction == "out" %}<span class="chip-negative">Money out</span>{% else %}<span class="chip-positive">Money in</span>{% endif %}
+                            {% if stream.amount_certainty == "estimated" %}<span class="label-dim">~ estimated</span>{% endif %}
                         </div>
                     </div>
                     <label class="flex flex-col gap-1">
@@ -134,10 +143,12 @@
                         </label>
                         <label class="flex flex-col gap-1">
                             <span class="label-dim">Default account</span>
-                            <select class="select select-sm bg-base-100" name="default_account_id">
+                            <select class="select select-sm bg-base-100" name="default_account_id"
+                                    data-selected="{% match stream.default_account_id %}{% when Some with (account_id) %}{{ account_id }}{% when None %}{% endmatch %}"
+                                    x-init="$el.value = $el.dataset.selected">
                                 <option value="">None</option>
                                 {% for account in accounts %}
-                                <option value="{{ account.id }}" {% if stream.default_account_id == account.id %}selected{% endif %}>
+                                <option value="{{ account.id }}">
                                     {{ account.name }}
                                 </option>
                                 {% endfor %}
@@ -147,8 +158,8 @@
                     <label class="flex flex-col gap-1">
                         <span class="label-dim">Amount certainty</span>
                         <select class="select select-sm bg-base-100" name="amount_certainty">
-                            <option value="known" {% if stream.amount_certainty.as_deref() != Some("estimated") %}selected{% endif %}>Known — I know the amount</option>
-                            <option value="estimated" {% if stream.amount_certainty.as_deref() == Some("estimated") %}selected{% endif %}>Estimated — a guess I correct later</option>
+                            <option value="known" {% if stream.amount_certainty != "estimated" %}selected{% endif %}>Known — I know the amount</option>
+                            <option value="estimated" {% if stream.amount_certainty == "estimated" %}selected{% endif %}>Estimated — a guess I correct later</option>
                         </select>
                     </label>
                     <label class="flex flex-col gap-1">
@@ -175,8 +186,8 @@
                         </label>
                         <label class="flex flex-col gap-1">
                             <span class="label-dim">Default amount</span>
-                            <input class="input input-sm bg-base-100 mono" type="number" step="0.01" name="schedule_amount"
-                                   value="{% match stream.schedule_amount %}{% when Some with (amount) %}{{ "{:.2}"|format(amount) }}{% when None %}{% endmatch %}">
+                            <input class="input input-sm bg-base-100 mono" type="text" inputmode="decimal" name="schedule_amount"
+                                   value="{% match stream.schedule_amount %}{% when Some with (amount) %}{{ amount|money }}{% when None %}{% endmatch %}">
                         </label>
                     </div>
                     <label class="flex flex-col gap-1">
@@ -189,8 +200,9 @@
                             Save Stream
                         </button>
                         <button class="px-4 py-2 rounded-lg text-sm cursor-pointer" type="button"
+                                data-stream-name="{{ stream.name }}"
                                 style="background: var(--vault-surface-container-high); color: var(--vault-secondary)"
-                                @click="deleteStream({{ stream.id }}, '{{ stream.name }}')">
+                                @click="deleteStream({{ stream.id }}, $el.dataset.streamName)">
                             Delete
                         </button>
                     </div>
@@ -254,7 +266,7 @@
                         </label>
                         <label class="flex flex-col gap-1">
                             <span class="label-dim">Default amount</span>
-                            <input class="input input-sm bg-base-100 mono" type="number" step="0.01" name="schedule_amount" placeholder="0.00">
+                            <input class="input input-sm bg-base-100 mono" type="text" inputmode="decimal" name="schedule_amount" placeholder="0.00">
                         </label>
                     </div>
                     <label class="flex flex-col gap-1">
@@ -336,7 +348,13 @@
 <script>
 function streamsManager() {
     return {
+        busy: false,
+        statusKind: 'info',
+        statusMessage: '',
         async submitForm(form, url, method) {
+            if (this.busy) return;
+            this.busy = true;
+            this.statusMessage = '';
             const formData = new FormData(form);
             const payload = {};
             for (const [key, value] of formData.entries()) {
@@ -349,55 +367,78 @@ function streamsManager() {
                 payload[key] = value;
             }
 
-            if (!formData.has('is_primary')) payload.is_primary = false;
-            else payload.is_primary = true;
+            if (form.querySelector('[name="is_primary"]')) {
+                payload.is_primary = formData.has('is_primary');
+            }
+            if (form.querySelector('[name="stream_ids"]') && payload.stream_ids === undefined) {
+                payload.stream_ids = [];
+            }
 
-            ['balance', 'schedule_amount'].forEach((key) => {
-                if (payload[key] === '' || payload[key] === undefined) {
+            for (const key of ['balance', 'schedule_amount']) {
+                if (!(key in payload)) continue;
+                if (payload[key] === '') {
                     payload[key] = null;
                 } else {
-                    payload[key] = Number(payload[key]);
+                    const amount = TrustDeedsUI.parseMoney(payload[key]);
+                    if (!Number.isFinite(amount)) {
+                        this.statusKind = 'error';
+                        this.statusMessage = 'Enter a valid dollar amount.';
+                        this.busy = false;
+                        return;
+                    }
+                    payload[key] = amount;
                 }
-            });
+            }
             ['default_account_id', 'due_day'].forEach((key) => {
-                if (payload[key] === '' || payload[key] === undefined) {
+                if (!(key in payload)) return;
+                if (payload[key] === '') {
                     payload[key] = null;
                 } else {
                     payload[key] = Number(payload[key]);
                 }
             });
-            ['description', 'notes', 'start_date', 'schedule_frequency', 'kind', 'name', 'amount_certainty'].forEach((key) => {
+            ['description', 'notes', 'start_date', 'schedule_frequency'].forEach((key) => {
                 if (payload[key] === undefined) return;
                 payload[key] = String(payload[key]).trim();
                 if (payload[key] === '') payload[key] = null;
             });
+            ['kind', 'name', 'amount_certainty'].forEach((key) => {
+                if (payload[key] !== undefined) payload[key] = String(payload[key]).trim();
+            });
 
             try {
-                const res = await fetch(url, {
+                await TrustDeedsUI.requestJson(url, {
                     method,
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload),
-                });
-                if (!res.ok) {
-                    const err = await res.json().catch(() => ({}));
-                    throw new Error(err.message || 'Save failed.');
-                }
+                }, 'Could not save your changes.');
                 window.location.reload();
-            } catch (err) {
-                alert(err.message || 'Save failed.');
+            } catch (error) {
+                this.statusKind = 'error';
+                this.statusMessage = error.message ?? 'Could not save your changes.';
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            } finally {
+                this.busy = false;
             }
         },
         async deleteStream(id, name) {
             if (!confirm(`Delete stream "${name}"? This removes it and its upcoming projected events.`)) return;
+            if (this.busy) return;
+            this.busy = true;
+            this.statusMessage = '';
             try {
-                const res = await fetch(`/api/streams/${id}`, { method: 'DELETE' });
-                if (!res.ok) {
-                    const err = await res.json().catch(() => ({}));
-                    throw new Error(err.message || 'Delete failed.');
-                }
+                await TrustDeedsUI.requestJson(
+                    `/api/streams/${id}`,
+                    { method: 'DELETE' },
+                    'Could not delete this stream.'
+                );
                 window.location.reload();
-            } catch (err) {
-                alert(err.message || 'Delete failed.');
+            } catch (error) {
+                this.statusKind = 'error';
+                this.statusMessage = error.message ?? 'Could not delete this stream.';
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            } finally {
+                this.busy = false;
             }
         }
     };

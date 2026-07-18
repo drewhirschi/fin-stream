@@ -5,24 +5,37 @@
 
 {% block content %}
 <div class="vault" x-data="timelineApp()" x-init="init()">
-    {% if !has_balance %}
-    <div class="surface-high p-6 mb-8">
+    <div class="surface-high p-6 mb-8" x-cloak x-show="!hasSavedCash && !forecast">
         <h2 class="text-lg mb-2" style="font-family: var(--font-display)">Set your starting cash balance</h2>
-        <p class="label-dim mb-4">The timeline needs a current cash balance before it can explain anything.</p>
+        <p class="label-dim mb-4">Confirm cash on hand today before the timeline projects anything. A confirmed zero is valid.</p>
         <div class="flex flex-wrap gap-3 items-center">
-            <input type="number" step="0.01" placeholder="e.g. 5000.00"
+            <input type="text" inputmode="decimal" placeholder="e.g. 5,000.00"
                    class="px-3 py-2 rounded-lg mono"
                    style="background: var(--vault-surface-container-lowest); color: var(--vault-on-surface); border: none; outline: none; width: 14rem;"
                    x-model="cashInput">
             <button class="emerald-pulse px-4 py-2 rounded-lg font-semibold text-sm cursor-pointer"
-                    @click="setCashBalance()">
-                Save Cash Balance
+                    @click="setCashBalance()" :disabled="cashSaving">
+                <span x-show="!cashSaving">Save Cash Balance</span>
+                <span x-cloak x-show="cashSaving">Saving...</span>
+            </button>
+            <button class="px-4 py-2 rounded-lg font-semibold text-sm cursor-pointer"
+                    style="background: var(--vault-surface-container-high); color: var(--vault-on-surface)"
+                    @click="syncMonarchBalance()" :disabled="monarchSyncing">
+                <span x-show="!monarchSyncing">Sync from Monarch</span>
+                <span x-cloak x-show="monarchSyncing">Syncing...</span>
             </button>
         </div>
     </div>
-    {% endif %}
 
-    <div class="flex flex-col gap-8">
+    <div x-cloak x-show="error" role="alert" class="surface-high p-4 mb-6" style="border-left: 3px solid var(--vault-secondary);">
+        <span style="color: var(--vault-secondary)" x-text="error"></span>
+    </div>
+
+    <div x-cloak x-show="loading && !forecast" class="flex justify-center py-16" role="status" aria-label="Loading timeline">
+        <div class="w-8 h-8 rounded-full" style="border: 3px solid var(--vault-surface-container-highest); border-top-color: var(--vault-primary); animation: spin 0.8s linear infinite;"></div>
+    </div>
+
+    <div class="flex flex-col gap-8" x-cloak x-show="forecast">
         <section class="grid gap-4 xl:grid-cols-[1.8fr,1fr]">
             <div class="surface-low p-6">
                 <div class="label-dim mb-1">Cash position on</div>
@@ -50,27 +63,31 @@
             <div class="surface-low p-6 flex flex-col gap-4">
                 <div>
                     <div class="label-dim mb-1">Current cash source</div>
-                    <div class="text-lg" x-text="forecast?.cash_source?.account_name || 'Current cash'"></div>
-                    <div class="mono mt-2" x-text="currency(forecast?.cash_source?.amount || forecast?.starting_balance || 0)"></div>
+                    <div class="text-lg" x-text="forecast?.cash_source?.account_name ?? 'Current cash'"></div>
+                    <div class="mono mt-2" x-text="currency(forecast?.cash_source?.amount ?? forecast?.starting_balance ?? 0)"></div>
                 </div>
-                <div class="label-dim" x-text="forecast?.cash_source?.detail || 'Using your saved current cash balance.'"></div>
-                <div class="label-dim" x-cloak x-show="forecast?.cash_source?.updated_at" x-text="'Updated ' + (forecast?.cash_source?.updated_at || '')"></div>
+                <div class="label-dim" x-text="forecast?.cash_source?.detail ?? 'Using your saved current cash balance.'"></div>
+                <div class="label-dim" x-text="'Balance as of ' + formatDate(forecast?.cash_source?.as_of_date ?? forecast?.balance_as_of_date ?? '')"></div>
+                <div class="label-dim" x-cloak x-show="forecast?.cash_source?.updated_at" x-text="'Updated ' + formatDateTime(forecast?.cash_source?.updated_at)"></div>
                 <div class="flex flex-wrap gap-2 items-end">
                     <label class="flex flex-col gap-1">
                         <span class="label-dim">Set cash on hand today</span>
-                        <input type="number" step="0.01" class="input input-sm bg-base-100 mono" style="width: 11rem"
-                               x-model="cashInput" placeholder="e.g. 5000.00">
+                        <input type="text" inputmode="decimal" class="input input-sm bg-base-100 mono" style="width: 11rem"
+                               x-model="cashInput" placeholder="e.g. 5,000.00">
                     </label>
                     <button class="emerald-pulse px-4 py-2 rounded-lg font-semibold text-sm cursor-pointer"
-                            @click="setCashBalance()">
-                        Save
+                            @click="setCashBalance()" :disabled="cashSaving">
+                        <span x-show="!cashSaving">Save</span>
+                        <span x-cloak x-show="cashSaving">Saving...</span>
+                    </button>
+                    <button class="px-4 py-2 rounded-lg font-semibold text-sm cursor-pointer"
+                            style="background: var(--vault-surface-container-high); color: var(--vault-on-surface)"
+                            @click="syncMonarchBalance()" :disabled="monarchSyncing">
+                        <span x-show="!monarchSyncing">Sync from Monarch</span>
+                        <span x-cloak x-show="monarchSyncing">Syncing...</span>
                     </button>
                 </div>
                 <div class="flex flex-wrap gap-2">
-                    <button class="emerald-pulse px-4 py-2 rounded-lg font-semibold text-sm cursor-pointer"
-                            @click="syncMonarchBalance()">
-                        Sync Monarch
-                    </button>
                     <button class="px-4 py-2 rounded-lg text-sm cursor-pointer"
                             style="background: var(--vault-surface-container-high); color: var(--vault-on-surface)"
                             @click="selectedDay = activeDay; openComposer()">
@@ -92,6 +109,7 @@
                         <select class="select select-sm bg-base-100"
                                 x-model="selectedViewId"
                                 @change="fetchForecast()">
+                            {% if views.is_empty() %}<option value="">All streams</option>{% endif %}
                             {% for view in views %}
                             <option value="{{ view.id }}" {% if selected_view_id == view.id %}selected{% endif %}>
                                 {{ view.name }}
@@ -187,9 +205,9 @@
                                 @click="editEvent(event)">
                             <div class="flex items-start justify-between gap-3">
                                 <div>
-                                    <div class="font-semibold" x-text="event.label || event.stream_name || 'Untitled event'"></div>
+                                    <div class="font-semibold" x-text="event.label ?? event.stream_name ?? 'Untitled event'"></div>
                                     <div class="label-dim mt-1">
-                                        <span x-text="event.stream_name || 'Stream'"></span>
+                                        <span x-text="event.stream_name ?? 'Stream'"></span>
                                         <span x-cloak x-show="event.account_name"> • <span x-text="event.account_name"></span></span>
                                         <span> • </span>
                                         <span x-text="event.status"></span>
@@ -220,7 +238,8 @@
                     <div class="grid gap-3 md:grid-cols-2">
                         <label class="flex flex-col gap-1">
                             <span class="label-dim">Stream</span>
-                            <select class="select select-sm bg-base-100" x-model="composer.stream_id">
+                            <select class="select select-sm bg-base-100" x-model="composer.stream_id" :disabled="editingEvent">
+                                {% if streams.is_empty() %}<option value="">Create a stream first</option>{% endif %}
                                 {% for stream in streams %}
                                 <option value="{{ stream.id }}">{{ stream.name }}</option>
                                 {% endfor %}
@@ -240,7 +259,7 @@
                     <div class="grid gap-3 md:grid-cols-2">
                         <label class="flex flex-col gap-1">
                             <span class="label-dim">Amount (positive)</span>
-                            <input class="input input-sm bg-base-100 mono" type="number" step="0.01" min="0" x-model="composer.amount" placeholder="125.00">
+                            <input class="input input-sm bg-base-100 mono" type="text" inputmode="decimal" x-model="composer.amount" placeholder="125.00">
                         </label>
                         <label class="flex flex-col gap-1">
                             <span class="label-dim" x-text="editingEvent ? 'Expected date' : 'Scheduled date'"></span>
@@ -291,9 +310,9 @@
                 <tbody>
                     <template x-for="row in forecast.rows" :key="row.event_id">
                         <tr @click="editEvent(row)" class="cursor-pointer">
-                            <td class="mono" x-text="row.date"></td>
-                            <td x-text="row.label || 'Untitled event'"></td>
-                            <td x-text="row.stream_name || '-'"></td>
+                            <td class="mono" x-text="formatDate(row.date)"></td>
+                            <td x-text="row.label ?? 'Untitled event'"></td>
+                            <td x-text="row.stream_name ?? '-'"></td>
                             <td class="mono" :style="row.amount >= 0 ? 'color: var(--vault-primary)' : 'color: var(--vault-secondary)'"
                                 x-text="currency(row.amount) + (row.amount_certainty === 'estimated' ? ' est' : '')"></td>
                             <td class="mono" x-text="currency(row.running_balance)"></td>
@@ -310,11 +329,6 @@
             </div>
         </template>
 
-        <template x-cloak x-if="error">
-            <div class="surface-high p-4" style="border-left: 3px solid var(--vault-secondary);">
-                <span style="color: var(--vault-secondary)" x-text="error"></span>
-            </div>
-        </template>
     </div>
 </div>
 
@@ -322,7 +336,12 @@
 function timelineApp() {
     const DAY_MS = 86400000;
     const chartHeight = 320;
-    const today = new Date().toISOString().split('T')[0];
+    const now = new Date();
+    const today = [
+        now.getFullYear(),
+        String(now.getMonth() + 1).padStart(2, '0'),
+        String(now.getDate()).padStart(2, '0'),
+    ].join('-');
 
     function dateToDay(dateStr) {
         const date = new Date(dateStr + 'T00:00:00Z');
@@ -335,9 +354,12 @@ function timelineApp() {
 
     return {
         forecast: null,
+        hasSavedCash: {% if forecast.is_some() %}true{% else %}false{% endif %},
         loading: false,
         error: null,
-        cashInput: '',
+        cashSaving: false,
+        monarchSyncing: false,
+        cashInput: '{% match forecast %}{% when Some with (value) %}{{ value.starting_balance|money }}{% when None %}{% endmatch %}',
         chartWidth: 1000,
         chartHeight,
         visibleStart: dateToDay(today) - 30,
@@ -346,8 +368,8 @@ function timelineApp() {
         maxSpan: 365,
         hoverDay: null,
         selectedDay: dateToDay(today),
-        selectedViewId: '{{ selected_view_id }}',
-        composer: { label: '', stream_id: '{{ default_stream_id }}', account_id: '', amount: '', date: today },
+        selectedViewId: {% if selected_view_id == 0 %}''{% else %}'{{ selected_view_id }}'{% endif %},
+        composer: { label: '', stream_id: {% if default_stream_id == 0 %}''{% else %}'{{ default_stream_id }}'{% endif %}, account_id: '', amount: '', date: today },
         editingEvent: null,
         composerSaving: false,
         composerError: null,
@@ -356,17 +378,13 @@ function timelineApp() {
             return this.hoverDay ?? this.selectedDay ?? dateToDay(today);
         },
         get activeDateFormatted() {
-            return new Date(dayToDate(this.activeDay) + 'T00:00:00Z').toLocaleDateString('en-US', {
-                month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC'
-            });
+            return this.formatDate(dayToDate(this.activeDay));
         },
         get activeBalance() {
             return this.balanceForDay(this.activeDay);
         },
         get selectedDayFormatted() {
-            return new Date(dayToDate(this.selectedDay) + 'T00:00:00Z').toLocaleDateString('en-US', {
-                month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC'
-            });
+            return this.formatDate(dayToDate(this.selectedDay));
         },
         get activeBreakdown() {
             return this.breakdownForDay(this.activeDay);
@@ -375,7 +393,7 @@ function timelineApp() {
             return this.breakdownForDay(this.selectedDay);
         },
         get selectedDayEvents() {
-            return (this.forecast?.rows || []).filter((row) => dateToDay(row.date) === this.selectedDay);
+            return (this.forecast?.rows ?? []).filter((row) => dateToDay(row.date) === this.selectedDay);
         },
         get visibleEnd() {
             return this.visibleStart + this.visibleSpan;
@@ -388,7 +406,7 @@ function timelineApp() {
             const rows = this.forecast.rows;
             const visibleRows = [];
             let index = 0;
-            let running = this.forecast.starting_balance;
+            let running = this.forecast.opening_balance;
             const firstDay = this.visibleStart;
             const lastDay = this.visibleEnd;
 
@@ -409,7 +427,7 @@ function timelineApp() {
         },
         get visibleTicks() {
             const ticks = [];
-            const step = this.visibleSpan <= 45 ? 1 : this.visibleSpan <= 120 ? 7 : 14;
+            const step = this.visibleSpan <= 45 ? 7 : this.visibleSpan <= 120 ? 14 : 30;
             for (let day = this.visibleStart; day <= this.visibleEnd; day += step) {
                 const date = new Date(dayToDate(day) + 'T00:00:00Z');
                 const isMonth = date.getUTCDate() === 1;
@@ -417,9 +435,7 @@ function timelineApp() {
                     date: day,
                     x: this.xForDay(day),
                     isMonth,
-                    label: isMonth
-                        ? date.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' })
-                        : (this.visibleSpan <= 45 ? date.getUTCDate() : date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }))
+                    label: this.formatDate(dayToDate(day)),
                 });
             }
             return ticks;
@@ -431,7 +447,7 @@ function timelineApp() {
                 .join(' ');
         },
         get visibleEvents() {
-            return (this.forecast?.rows || [])
+            return (this.forecast?.rows ?? [])
                 .filter((row) => {
                     const day = dateToDay(row.date);
                     return day >= this.visibleStart && day <= this.visibleEnd;
@@ -450,9 +466,13 @@ function timelineApp() {
         },
 
         currency(value) {
-            const numeric = Number(value || 0);
-            const prefix = numeric < 0 ? '-' : '';
-            return `${prefix}$${Math.abs(numeric).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+            return TrustDeedsUI.currency(value ?? 0);
+        },
+        formatDate(value) {
+            return TrustDeedsUI.date(value);
+        },
+        formatDateTime(value) {
+            return TrustDeedsUI.datetime(value);
         },
         xForDay(day) {
             return ((day - this.visibleStart) / this.visibleSpan) * this.chartWidth;
@@ -477,7 +497,7 @@ function timelineApp() {
         },
         balanceForDay(day) {
             if (!this.forecast) return 0;
-            let balance = this.forecast.starting_balance;
+            let balance = this.forecast.opening_balance;
             for (const row of this.forecast.rows) {
                 if (dateToDay(row.date) > day) break;
                 balance = row.running_balance;
@@ -541,10 +561,12 @@ function timelineApp() {
             this.selectedDay = dateToDay(event.date);
             this.editingEvent = event;
             this.composer = {
-                label: event.label || '',
+                label: event.label ?? '',
                 stream_id: String(event.stream_id),
-                account_id: event.account_id ? String(event.account_id) : '',
-                amount: String(Math.abs(event.amount)),
+                account_id: event.has_account_override && event.account_id !== null && event.account_id !== undefined
+                    ? String(event.account_id)
+                    : '',
+                amount: TrustDeedsUI.money(Math.abs(event.amount ?? 0)),
                 date: event.date,
             };
             this.composerError = null;
@@ -555,20 +577,25 @@ function timelineApp() {
         async saveComposer() {
             this.composerSaving = true;
             this.composerError = null;
-            const amount = Number(this.composer.amount);
+            const amount = TrustDeedsUI.parseMoney(this.composer.amount);
             if (!this.composer.label.trim()) {
                 this.composerError = 'Label is required.';
                 this.composerSaving = false;
                 return;
             }
-            if (!this.editingEvent && (!Number.isFinite(amount) || amount === 0)) {
-                this.composerError = 'Enter a non-zero amount.';
+            if (!Number.isFinite(amount) || amount <= 0) {
+                this.composerError = 'Enter a positive dollar amount.';
+                this.composerSaving = false;
+                return;
+            }
+            if (!this.editingEvent && !this.composer.stream_id) {
+                this.composerError = 'Create a stream before adding an event.';
                 this.composerSaving = false;
                 return;
             }
             try {
                 if (this.editingEvent) {
-                    const res = await fetch(`/api/events/${this.editingEvent.event_id}`, {
+                    await TrustDeedsUI.requestJson(`/api/events/${this.editingEvent.event_id}`, {
                         method: 'PATCH',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
@@ -577,13 +604,9 @@ function timelineApp() {
                             expected_date: this.composer.date,
                             account_id: this.composer.account_id ? Number(this.composer.account_id) : null,
                         }),
-                    });
-                    if (!res.ok) {
-                        const err = await res.json().catch(() => ({}));
-                        throw new Error(err.message || 'Failed to update event.');
-                    }
+                    }, 'Failed to update the event.');
                 } else {
-                    const res = await fetch('/api/events', {
+                    await TrustDeedsUI.requestJson('/api/events', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
@@ -593,11 +616,7 @@ function timelineApp() {
                             expected_date: this.composer.date,
                             amount,
                         }),
-                    });
-                    if (!res.ok) {
-                        const err = await res.json().catch(() => ({}));
-                        throw new Error(err.message || 'Failed to create event.');
-                    }
+                    }, 'Failed to create the event.');
                 }
                 await this.fetchForecast();
                 this.openComposer();
@@ -609,23 +628,19 @@ function timelineApp() {
         },
         async markLanded() {
             if (!this.editingEvent) return;
-            const amount = Number(this.composer.amount);
-            if (!Number.isFinite(amount) || amount === 0) {
+            const amount = TrustDeedsUI.parseMoney(this.composer.amount);
+            if (!Number.isFinite(amount) || amount <= 0) {
                 this.composerError = 'Enter the amount that actually landed.';
                 return;
             }
             this.composerSaving = true;
             this.composerError = null;
             try {
-                const res = await fetch(`/api/events/${this.editingEvent.event_id}/reconcile`, {
+                await TrustDeedsUI.requestJson(`/api/events/${this.editingEvent.event_id}/reconcile`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ actual_date: this.composer.date, amount }),
-                });
-                if (!res.ok) {
-                    const err = await res.json().catch(() => ({}));
-                    throw new Error(err.message || 'Failed to mark landed.');
-                }
+                }, 'Failed to mark the event as landed.');
                 await this.fetchForecast();
                 this.openComposer();
             } catch (err) {
@@ -640,11 +655,11 @@ function timelineApp() {
             this.composerSaving = true;
             this.composerError = null;
             try {
-                const res = await fetch(`/api/events/${this.editingEvent.event_id}`, { method: 'DELETE' });
-                if (!res.ok) {
-                    const err = await res.json().catch(() => ({}));
-                    throw new Error(err.message || 'Failed to delete event.');
-                }
+                await TrustDeedsUI.requestJson(
+                    `/api/events/${this.editingEvent.event_id}`,
+                    { method: 'DELETE' },
+                    'Failed to delete the event.'
+                );
                 await this.fetchForecast();
                 this.openComposer();
             } catch (err) {
@@ -654,30 +669,50 @@ function timelineApp() {
             }
         },
         async setCashBalance() {
-            const amount = Number(this.cashInput);
-            if (!Number.isFinite(amount)) return;
+            if (String(this.cashInput).trim() === '') {
+                this.error = 'Enter cash on hand. Use 0 if the confirmed balance is zero.';
+                return;
+            }
+            const amount = TrustDeedsUI.parseMoney(this.cashInput);
+            if (!Number.isFinite(amount)) {
+                this.error = 'Enter a valid cash balance.';
+                return;
+            }
+            this.cashSaving = true;
+            this.error = null;
             try {
-                const res = await fetch('/api/settings/cash', {
+                await TrustDeedsUI.requestJson('/api/settings/cash', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ amount }),
-                });
-                if (!res.ok) throw new Error('Failed to save cash balance.');
+                    body: JSON.stringify({ amount, as_of_date: today }),
+                }, 'Failed to save the cash balance.');
+                this.hasSavedCash = true;
                 await this.fetchForecast();
             } catch (err) {
                 this.error = err.message || 'Failed to save cash balance.';
+            } finally {
+                this.cashSaving = false;
             }
         },
         async syncMonarchBalance() {
+            this.monarchSyncing = true;
+            this.error = null;
             try {
-                const res = await fetch('/api/sync/balance', { method: 'POST' });
-                if (!res.ok) {
-                    const err = await res.json().catch(() => ({}));
-                    throw new Error(err.message || 'Failed to sync Monarch balance.');
+                const result = await TrustDeedsUI.requestJson('/api/sync/balance', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ as_of_date: today }),
+                }, 'Failed to refresh the balance from Monarch.');
+                if (!Number.isFinite(Number(result.adjusted_balance))) {
+                    throw new Error('Failed to refresh the balance from Monarch. The server returned incomplete data.');
                 }
+                this.cashInput = TrustDeedsUI.money(result.adjusted_balance);
+                this.hasSavedCash = true;
                 await this.fetchForecast();
             } catch (err) {
-                this.error = err.message || 'Failed to sync Monarch balance.';
+                this.error = err.message || 'Failed to refresh the balance from Monarch.';
+            } finally {
+                this.monarchSyncing = false;
             }
         },
         async fetchForecast() {
@@ -686,14 +721,22 @@ function timelineApp() {
             const from = dayToDate(dateToDay(today) - 120);
             const through = dayToDate(dateToDay(today) + 365);
             try {
-                const res = await fetch(`/api/forecast?from=${from}&through=${through}&view_id=${this.selectedViewId}`);
-                if (!res.ok) {
-                    const err = await res.json().catch(() => ({}));
-                    throw new Error(err.message || 'Failed to load timeline.');
+                const view = this.selectedViewId ? `&view_id=${encodeURIComponent(this.selectedViewId)}` : '';
+                const data = await TrustDeedsUI.requestJson(
+                    `/api/forecast?from=${from}&through=${through}${view}`,
+                    {},
+                    'Failed to load the timeline.'
+                );
+                if (!Array.isArray(data.rows)
+                    || !Number.isFinite(Number(data.starting_balance))
+                    || !Number.isFinite(Number(data.opening_balance))
+                    || typeof data.balance_as_of_date !== 'string') {
+                    throw new Error('Failed to load the timeline. The server returned incomplete data.');
                 }
-                this.forecast = await res.json();
+                this.forecast = data;
+                this.hasSavedCash = true;
                 if (this.cashInput === '') {
-                    this.cashInput = String(this.forecast?.cash_source?.amount ?? this.forecast?.starting_balance ?? '');
+                    this.cashInput = TrustDeedsUI.money(data.cash_source?.amount ?? data.starting_balance ?? 0);
                 }
             } catch (err) {
                 this.error = err.message || 'Could not load timeline.';
@@ -702,7 +745,7 @@ function timelineApp() {
             }
         },
         init() {
-            this.fetchForecast();
+            if (this.hasSavedCash) this.fetchForecast();
             this.$nextTick(() => {
                 const rect = this.$refs.chartWrap?.getBoundingClientRect();
                 if (rect) this.chartWidth = Math.max(rect.width, 640);

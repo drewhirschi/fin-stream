@@ -4,149 +4,128 @@
 {% block nav_inbox_attrs %}aria-current="page"{% endblock %}
 
 {% block content %}
-<dialog id="inbox-error-modal" class="modal">
-    <div class="modal-box max-w-2xl">
-        <h3 class="font-bold text-lg">Processing error</h3>
-        <pre id="inbox-error-modal-body" class="mt-3 whitespace-pre-wrap break-words text-sm rounded bg-base-200 p-3 overflow-auto max-h-96"></pre>
+<dialog id="inbox-email-dialog" class="modal">
+    <div class="modal-box max-w-4xl">
+        <div id="inbox-panel-content"
+             hx-on::after-swap="this.closest('dialog').showModal()">
+            <div class="flex justify-center p-8"><span class="loading loading-spinner"></span></div>
+        </div>
         <div class="modal-action">
-            <form method="dialog">
-                <button class="btn btn-sm">Close</button>
-            </form>
+            <form method="dialog"><button class="btn btn-sm">Close</button></form>
         </div>
     </div>
-    <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    <form method="dialog" class="modal-backdrop"><button>Close</button></form>
 </dialog>
-<script>
-function showInboxError(emailId) {
-    const tpl = document.getElementById('inbox-error-' + emailId);
-    const body = document.getElementById('inbox-error-modal-body');
-    body.textContent = tpl ? tpl.innerHTML : '(error details unavailable)';
-    document.getElementById('inbox-error-modal').showModal();
-}
-</script>
-<div class="vault">
-    <div class="flex flex-col gap-8">
-        <section>
-            <div class="bg-base-100 rounded-2xl p-4 sm:p-6 mb-4 shadow-sm border border-base-300">
-                <div class="flex items-end justify-between gap-4 flex-wrap">
-                    <div>
-                        <h1 class="text-3xl">Inbox</h1>
-                        <p class="label-dim mt-1">
-                            {% if show_linked %}
-                            All received emails, linked and unlinked.
-                            {% else %}
-                            Received emails waiting to be linked to a loan.
-                            {% endif %}
-                        </p>
-                    </div>
-                    <label class="label cursor-pointer gap-2">
-                        <span class="label-text">Show linked</span>
-                        <input type="checkbox" class="toggle toggle-sm"
-                               {% if show_linked %}checked{% endif %}
-                               onchange="window.location.href = this.checked ? '/inbox?show_linked=true' : '/inbox'"/>
-                    </label>
-                </div>
-            </div>
 
-            <div class="card bg-base-100 shadow-sm border border-base-300">
-                <div class="card-body">
-                    {% if emails.is_empty() %}
-                    <div class="alert alert-info">
-                        {% if show_linked %}
-                        No emails received yet.
-                        {% else %}
-                        No unlinked emails. Emails received via Resend will appear here until you link them to a loan.
-                        {% endif %}
-                    </div>
+<div class="vault flex flex-col gap-6">
+    <section class="bg-base-100 rounded-2xl p-4 sm:p-6 shadow-sm border border-base-300">
+        <div class="flex items-end justify-between gap-4 flex-wrap">
+            <div>
+                <h1 class="text-3xl">Inbox</h1>
+                <p class="label-dim mt-1">
+                    {% if show_linked %}
+                    All imported received emails, linked and unlinked.
                     {% else %}
-                    <div class="overflow-x-auto">
-                        <table class="table bg-base-100">
-                            <thead>
-                                <tr>
-                                    <th>Received</th>
-                                    <th>From</th>
-                                    <th>Subject</th>
-                                    <th>Attachments</th>
-                                    <th>Status</th>
-                                    <th>Link to Loan</th>
-                                    <th></th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for email in emails %}
-                                <tr>
-                                    <td class="whitespace-nowrap text-sm">{{ email.received_at|datetime }}</td>
-                                    <td class="text-sm">{{ email.from_address }}</td>
-                                    <td>
-                                        <a href="/inbox/{{ email.id }}" class="link">
-                                            {% match email.subject %}
-                                                {% when Some with (s) %}{{ s }}
-                                                {% when None %}(no subject)
-                                            {% endmatch %}
-                                        </a>
-                                    </td>
-                                    <td class="text-center">
-                                        {% if email.attachment_count > 0 %}
-                                        <span class="badge badge-sm">{{ email.attachment_count }}</span>
-                                        {% else %}
-                                        —
-                                        {% endif %}
-                                    </td>
-                                    <td>
-                                        {% if email.processing_state == "stored" %}
-                                        <span class="badge badge-success badge-sm">Stored</span>
-                                        {% else if email.processing_state == "error" %}
-                                        <div class="flex items-center gap-2">
-                                            <button type="button"
-                                                    class="badge badge-error badge-sm cursor-pointer"
-                                                    onclick="showInboxError({{ email.id }})"
-                                                    title="Click to see the error">Error</button>
-                                            <form method="post" action="/inbox/{{ email.id }}/retry" class="inline">
-                                                <button type="submit" class="btn btn-xs btn-ghost" title="Retry fetch from Resend">Retry</button>
-                                            </form>
-                                        </div>
-                                        <template id="inbox-error-{{ email.id }}">{{ email.error_message.as_deref().unwrap_or("(no error message recorded)") }}</template>
-                                        {% else %}
-                                        <span class="badge badge-warning badge-sm">Pending</span>
-                                        {% endif %}
-                                    </td>
-                                    <td>
-                                        {% match email.loan_account %}
-                                            {% when Some with (account) %}
-                                            <div class="flex items-center gap-2">
-                                                <a href="/integrations/tmo/loans/{{ account }}" class="link text-sm">{{ account }}</a>
-                                                <form method="post" action="/inbox/{{ email.id }}/unlink" class="inline">
-                                                    <button type="submit" class="btn btn-xs btn-ghost" title="Unlink from loan">Unlink</button>
-                                                </form>
-                                            </div>
-                                            {% when None %}
-                                            {% if !loans.is_empty() %}
-                                            <form method="post" action="/inbox/{{ email.id }}/link" class="flex items-center gap-2">
-                                                <select name="loan_account" class="select select-bordered select-xs w-40">
-                                                    <option value="">Select loan...</option>
-                                                    {% for loan in loans %}
-                                                    <option value="{{ loan.loan_account }}">{{ loan.loan_account }} - {% match loan.borrower_name %}{% when Some with (n) %}{{ n }}{% when None %}?{% endmatch %}</option>
-                                                    {% endfor %}
-                                                </select>
-                                                <button type="submit" class="btn btn-xs btn-outline">Link</button>
-                                            </form>
-                                            {% endif %}
-                                        {% endmatch %}
-                                    </td>
-                                    <td>
-                                        <form method="post" action="/inbox/{{ email.id }}/delete" onsubmit="return confirm('Delete this email? This removes the row and its attachments from storage.');">
-                                            <button type="submit" class="btn btn-xs btn-ghost text-error" title="Delete email">Delete</button>
-                                        </form>
-                                    </td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
+                    Imported received emails waiting to be linked to a loan.
                     {% endif %}
-                </div>
+                </p>
             </div>
-        </section>
-    </div>
+            <label class="label cursor-pointer gap-2">
+                <span class="label-text">Show linked</span>
+                <input type="checkbox" class="toggle toggle-sm"
+                       {% if show_linked %}checked{% endif %}
+                       onchange="window.location.href = this.checked ? '/inbox?show_linked=true' : '/inbox'">
+            </label>
+        </div>
+        <div class="alert alert-info mt-4 text-sm">
+            Inbound delivery and retry run inline with durable replay protection. Stored bodies and attachments
+            open through authenticated, short-lived object-storage links.
+        </div>
+    </section>
+
+    <section class="card bg-base-100 shadow-sm border border-base-300">
+        <div class="card-body">
+            {% if emails.is_empty() %}
+            <div class="alert alert-info">
+                {% if show_linked %}
+                No imported emails are available.
+                {% else %}
+                No unlinked imported emails are waiting for review.
+                {% endif %}
+            </div>
+            {% else %}
+            <div class="overflow-x-auto">
+                <table class="table bg-base-100">
+                    <thead>
+                        <tr>
+                            <th>Received</th>
+                            <th>From</th>
+                            <th>Subject</th>
+                            <th>Attachments</th>
+                            <th>Status</th>
+                            <th>Link to loan</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in emails %}
+                        <tr>
+                            <td class="whitespace-nowrap text-sm">{{ item.email.received_at|datetime_local|safe }}</td>
+                            <td class="text-sm">{{ item.email.from_address }}</td>
+                            <td>
+                                <a href="/inbox/{{ item.email.id }}"
+                                   class="link"
+                                   hx-get="/inbox/{{ item.email.id }}/panel"
+                                   hx-target="#inbox-panel-content"
+                                   hx-swap="innerHTML">
+                                    {{ item.email.subject.as_deref().unwrap_or("(no subject)") }}
+                                </a>
+                            </td>
+                            <td class="text-center">
+                                {% if item.attachment_count > 0 %}
+                                <span class="badge badge-sm">{{ item.attachment_count|number }}</span>
+                                {% else %}—{% endif %}
+                            </td>
+                            <td>
+                                {% if item.email.processing_state == "stored" %}
+                                <span class="badge badge-success badge-sm">Stored</span>
+                                {% else if item.email.processing_state == "error" %}
+                                <span class="badge badge-error badge-sm">Error</span>
+                                {% else %}
+                                <span class="badge badge-warning badge-sm">Pending</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% match item.email.loan_account %}
+                                {% when Some with (account) %}
+                                <div class="flex items-center gap-2">
+                                    <span class="font-mono text-xs">{{ account }}</span>
+                                    <form method="post" action="/inbox/{{ item.email.id }}/unlink">
+                                        <button type="submit" class="btn btn-xs btn-ghost">Unlink</button>
+                                    </form>
+                                </div>
+                                {% when None %}
+                                {% if loans.is_empty() %}
+                                <span class="label-dim text-xs">No active imported loans</span>
+                                {% else %}
+                                <form method="post" action="/inbox/{{ item.email.id }}/link" class="flex items-center gap-2">
+                                    <select name="loan_account" required class="select select-bordered select-xs w-48">
+                                        <option value="">Select loan…</option>
+                                        {% for loan in loans %}
+                                        <option value="{{ loan.loan_account }}">{{ loan.loan_account }} — {{ loan.borrower_name.as_deref().unwrap_or("Unknown borrower") }}</option>
+                                        {% endfor %}
+                                    </select>
+                                    <button type="submit" class="btn btn-xs btn-outline">Link</button>
+                                </form>
+                                {% endif %}
+                                {% endmatch %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endif %}
+        </div>
+    </section>
 </div>
 {% endblock %}

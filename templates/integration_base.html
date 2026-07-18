@@ -22,16 +22,14 @@
             <p class="label-dim mt-1">{{ connection.provider }}</p>
         </div>
         {% if connection.status == "error" %}
-            <span class="badge badge-error">Error</span>
+        <span class="badge badge-error">Error</span>
         {% else %}
-            <span class="badge badge-success">Active</span>
+        <span class="badge badge-success">{{ connection.status }}</span>
         {% endif %}
     </div>
-
     {% match connection.last_error %}
-        {% when Some with (message) %}
-        <div class="alert alert-error py-2 text-sm">{{ message }}</div>
-        {% when None %}{% endmatch %}
+    {% when Some with (message) %}<div class="alert alert-error py-2 text-sm">{{ message }}</div>
+    {% when None %}{% endmatch %}
 </div>
 
 <div class="grid grid-cols-1 lg:grid-cols-[15rem_minmax(0,1fr)] gap-6 items-start">
@@ -39,49 +37,16 @@
         <div class="card-body p-4">
             <div class="text-xs uppercase tracking-wide label-dim mb-3">Workspace</div>
             <ul class="menu integration-nav gap-1" preload="mouseover">
-                <li>
-                    <a href="/integrations/{{ connection.slug }}"
-                       class="nav-link {% if current_section == "overview" %}active menu-active{% endif %}"
-                       {% if current_section == "overview" %}aria-current="page"{% endif %}>
-                        Overview
-                    </a>
-                </li>
+                <li><a href="/integrations/{{ connection.slug }}" class="nav-link {% if current_section == "overview" %}active menu-active{% endif %}" {% if current_section == "overview" %}aria-current="page"{% endif %}>Overview</a></li>
                 {% if connection.slug == "tmo" %}
-                <li>
-                    <a href="/integrations/{{ connection.slug }}/loans"
-                       class="nav-link {% if current_section == "loans" %}active menu-active{% endif %}"
-                       {% if current_section == "loans" %}aria-current="page"{% endif %}>
-                        Loans
-                    </a>
-                </li>
-                <li>
-                    <a href="/integrations/{{ connection.slug }}/payments"
-                       class="nav-link {% if current_section == "payments" %}active menu-active{% endif %}"
-                       {% if current_section == "payments" %}aria-current="page"{% endif %}>
-                        Payments
-                    </a>
-                </li>
+                <li><a href="/integrations/{{ connection.slug }}/loans" class="nav-link {% if current_section == "loans" %}active menu-active{% endif %}" {% if current_section == "loans" %}aria-current="page"{% endif %}>Loans</a></li>
+                <li><a href="/integrations/{{ connection.slug }}/payments" class="nav-link {% if current_section == "payments" %}active menu-active{% endif %}" {% if current_section == "payments" %}aria-current="page"{% endif %}>Payments</a></li>
                 {% endif %}
-                <li>
-                    <a href="/integrations/{{ connection.slug }}/sync"
-                       class="nav-link {% if current_section == "sync" %}active menu-active{% endif %}"
-                       {% if current_section == "sync" %}aria-current="page"{% endif %}>
-                        Sync
-                    </a>
-                </li>
-                <li>
-                    <a href="/integrations/{{ connection.slug }}/debug"
-                       class="nav-link {% if current_section == "debug" %}active menu-active{% endif %}"
-                       {% if current_section == "debug" %}aria-current="page"{% endif %}>
-                        Debug
-                    </a>
-                </li>
+                <li><a href="/integrations/{{ connection.slug }}/sync" class="nav-link {% if current_section == "sync" %}active menu-active{% endif %}" {% if current_section == "sync" %}aria-current="page"{% endif %}>Sync</a></li>
+                <li><a href="/integrations/{{ connection.slug }}/debug" class="nav-link {% if current_section == "debug" %}active menu-active{% endif %}" {% if current_section == "debug" %}aria-current="page"{% endif %}>Debug</a></li>
             </ul>
         </div>
     </aside>
-
-    <section class="min-w-0">
-        {% block integration_page_content %}{% endblock %}
-    </section>
+    <section class="min-w-0">{% block integration_page_content %}{% endblock %}</section>
 </div>
 {% endblock %}

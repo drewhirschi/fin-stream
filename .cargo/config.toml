@@ -1,0 +1,10 @@
+# `cargo dev` runs the canonical NextRS watcher. Install it once with
+# `cargo install cargo-nextrs-dev` if Cargo reports that the subcommand is
+# missing. It rebuilds the app and restarts the local server after relevant
+# Rust, TSX, client, asset, and manifest changes.
+[alias]
+dev = "nextrs-dev --bin trust-deeds"
+
+# vercel-rust reads config.build.target and crashes if this table is absent.
+# Empty means build for Vercel's host target.
+[build]

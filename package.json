@@ -1,15 +1,14 @@
 {
-  "name": "trust-deeds-css",
+  "name": "trust-deeds-assets",
   "version": "0.1.0",
   "private": true,
-  "description": "Build-time Tailwind + DaisyUI pipeline. Run `bun install` then `bun run build` to regenerate static/app.css.",
   "scripts": {
-    "build": "tailwindcss -i static/app.input.css -o static/app.css --minify",
-    "watch": "tailwindcss -i static/app.input.css -o static/app.css --watch"
+    "build": "tailwindcss -i assets/app.input.css -o public/static/app.css --minify",
+    "watch": "tailwindcss -i assets/app.input.css -o public/static/app.css --watch"
   },
   "devDependencies": {
-    "@tailwindcss/cli": "^4.1.0",
-    "daisyui": "^5.0.0",
-    "tailwindcss": "^4.1.0"
+    "@tailwindcss/cli": "4.1.11",
+    "daisyui": "5.0.50",
+    "tailwindcss": "4.1.11"
   }
 }
