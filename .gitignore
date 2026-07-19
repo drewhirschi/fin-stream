@@ -2,6 +2,9 @@
 /tools/*/target/
 node_modules
 /data/
+/client/openapi.json
+/client/src/generated/
+/public/dist/
 /.env
 .vercel
 .env*

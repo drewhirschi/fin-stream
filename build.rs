@@ -14,7 +14,7 @@ fn main() {
 }
 
 fn inject_mobile_viewport() -> std::io::Result<()> {
-    // NextRS 0.3.8 emits client-only page fragments. React eventually hoists the
+    // NextRS emits client-only page fragments. React eventually hoists the
     // layout's metadata, but mobile browsers need the viewport directive before
     // the app bundle runs so their initial layout viewport is device-width.
     let output = std::path::PathBuf::from(

@@ -7,7 +7,6 @@ export interface FinanceData { accounts: Account[]; streams: Stream[]; views: Vi
 export interface Connection { id: number; slug: string; name: string; provider: string; status: string; sync_cadence: string; last_synced_at?: string | null; last_error?: string | null; next_scheduled_at?: string | null; record_count: number; normalized_count: number; pending_count: number }
 export interface LoanList { loan_account: string; borrower_name?: string | null; property_address?: string | null; property_city?: string | null; property_state?: string | null; featured_image_url?: string | null; property_type?: string | null; percent_owned?: number | null; note_rate?: number | null; principal_balance?: number | null; regular_payment?: number | null; maturity_date?: string | null; next_payment_date?: string | null; interest_paid_to?: string | null; is_delinquent?: number | null }
 export interface Payment { id: number; loan_account: string; borrower_name: string; property_name: string; check_number?: string | null; check_date: string; amount: number; service_fee: number; interest: number; principal: number; charges: number; late_charges: number; other: number; processing_state: string; raw_payload?: string | null }
-export interface SyncRun { id: number; started_at: string; finished_at?: string | null; status: string; error_message?: string | null; events_upserted: number; loans_upserted: number; snapshots_created: number }
 export interface Overview { snapshot_date: string; portfolio_value?: number | null; portfolio_yield?: number | null; portfolio_count?: number | null; ytd_interest?: number | null; trust_balance?: number | null; outstanding_checks?: number | null }
 export interface IntegrationData { connection: Connection; loans: LoanList[]; payments: Payment[]; normalized_payments: Array<Record<string, unknown>>; overviews: Overview[]; captured_records: Array<Record<string, unknown>>; sync_logs: SyncRun[]; control: { mode: string; scheduler_enabled: boolean; updated_at: string } }
 export interface IntegrationsData { connections: Connection[] }
@@ -20,3 +19,6 @@ export interface Attachment { id: number; filename: string; content_type: string
 export interface LoanData { connection: Connection; loan: LoanDetail; workspace: Workspace; photos: Photo[]; payments: Payment[]; emails: Email[] }
 export interface InboxData { emails: Array<{ email: Email; attachment_count: number }>; loans: LoanList[]; show_linked: boolean }
 export interface EmailData { email: Email; attachments: Attachment[]; recipients: string[]; loans: LoanList[] }
+import type { SyncRun } from "./generated/model/syncRun";
+
+export type { SyncRun } from "./generated/model/syncRun";

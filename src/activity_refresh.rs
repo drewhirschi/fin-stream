@@ -15,6 +15,7 @@ use crate::{
     db::AppContext,
     finance::IsoDate,
     integrations::actions::{MONARCH_CONNECTION_SLUG, MonarchBalanceRequest, sync_monarch_balance},
+    operations::{OperationError, OperationRepository},
     sync_runtime::{
         DirectTmoProviderFactory, SystemSyncClock, TMO_CONNECTION_SLUG, TmoSyncService,
     },
@@ -32,6 +33,75 @@ struct RefreshResult {
     slug: &'static str,
     outcome: String,
     status: u16,
+}
+
+/// Register a best-effort TMO refresh without extending the authenticated
+/// page response. The future begins immediately; NextRS keeps it alive through
+/// Vercel invocation shutdown and falls back to `tokio::spawn` locally.
+pub(crate) fn schedule_tmo_if_stale(
+    wait: &nextrs::WaitUntil,
+    context: AppContext,
+    cipher: Arc<CredentialCipher>,
+) {
+    wait.wait_until(async move {
+        refresh_tmo_if_stale(&context, &cipher, OffsetDateTime::now_utc()).await;
+    });
+}
+
+async fn refresh_tmo_if_stale(
+    context: &AppContext,
+    cipher: &CredentialCipher,
+    now: OffsetDateTime,
+) {
+    let due = match tmo_is_due(context, now).await {
+        Ok(due) => due,
+        Err(error) => {
+            tracing::error!(%error, "could not determine whether TMO is due for activity refresh");
+            return;
+        }
+    };
+    if !due {
+        return;
+    }
+
+    let connection = match context.connection().await {
+        Ok(connection) => connection,
+        Err(error) => {
+            tracing::error!(%error, "could not load operation control for activity refresh");
+            return;
+        }
+    };
+    match OperationRepository::new(&connection)
+        .require_writes_enabled()
+        .await
+    {
+        Ok(_) => {}
+        Err(OperationError::ReadOnly) => return,
+        Err(error) => {
+            tracing::error!(%error, "could not validate operation control for activity refresh");
+            return;
+        }
+    }
+
+    let factory = DirectTmoProviderFactory;
+    let clock = SystemSyncClock;
+    let service = TmoSyncService::production(context, cipher, &factory, &clock);
+    match service.run_manual().await {
+        Ok(execution) => {
+            tracing::info!(
+                integration = TMO_CONNECTION_SLUG,
+                outcome = execution.outcome_code(),
+                "background activity refresh finished"
+            );
+        }
+        Err(error) => {
+            tracing::error!(
+                integration = TMO_CONNECTION_SLUG,
+                failure_class = error.class_code(),
+                "background activity refresh could not coordinate integration"
+            );
+        }
+    }
 }
 
 /// Refresh configured integrations inline when their last successful refresh
@@ -158,6 +228,22 @@ async fn due_integrations(
         }
     }
     Ok(due)
+}
+
+async fn tmo_is_due(context: &AppContext, now: OffsetDateTime) -> anyhow::Result<bool> {
+    let connection = context.connection().await?;
+    let mut rows = connection
+        .query(
+            "SELECT last_synced_at FROM intg_integration_connection \
+             WHERE slug = 'tmo' AND provider = 'mortgage_office'",
+            (),
+        )
+        .await?;
+    let Some(row) = rows.next().await? else {
+        return Ok(false);
+    };
+    let last_synced_at = row.get::<Option<String>>(0)?;
+    Ok(integration_is_due(last_synced_at.as_deref(), now))
 }
 
 fn integration_is_due(last_synced_at: Option<&str>, now: OffsetDateTime) -> bool {
