@@ -343,7 +343,7 @@ async fn stale_transition_uses_caller_cutoff_and_keeps_newer_run() {
     assert_eq!(interrupted[0].status, SyncRunStatus::Error);
     assert_eq!(
         interrupted[0].error_message.as_deref(),
-        Some("execution exceeded platform maximum duration")
+        Some("execution owner expired before recording completion")
     );
     assert_eq!(
         repository.current_run("monarch").await.unwrap().unwrap().id,

@@ -3,6 +3,7 @@ use tower::ServiceBuilder;
 
 #[tokio::main]
 async fn main() -> Result<(), vercel_runtime::Error> {
+    trust_deeds::init_tracing();
     let router = trust_deeds::configured_router()
         .await
         .map_err(|error| vercel_runtime::Error::from(error.to_string()))?;

@@ -1,5 +1,6 @@
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    trust_deeds::init_tracing();
     dotenvy::dotenv().ok();
     let port = std::env::var("PORT")
         .ok()
