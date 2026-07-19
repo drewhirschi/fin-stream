@@ -1,7 +1,7 @@
 use axum::{
+    Json,
     extract::{Extension, Path},
-    http::HeaderMap,
-    response::Response,
+    http::StatusCode,
 };
 
 use crate::{db::AppContext, sync_runtime::http};
@@ -17,9 +17,11 @@ use crate::{db::AppContext, sync_runtime::http};
     ),
 )]
 pub async fn get(
-    context: Extension<AppContext>,
-    slug: Path<String>,
-    headers: HeaderMap,
-) -> Response {
-    http::status_scoped(context, slug, headers).await
+    Extension(context): Extension<AppContext>,
+    Path(slug): Path<String>,
+) -> Result<
+    Json<http::SyncStatusResponse>,
+    (StatusCode, Json<http::SyncErrorResponse>),
+> {
+    http::status_json(&context, &slug).await.map(Json)
 }

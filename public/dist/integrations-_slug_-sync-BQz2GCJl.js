@@ -260,21 +260,12 @@ function Sync() {
 }
 function SyncView({ data, slug }) {
 	const queryClient = useQueryClient();
-	const initialRun = data.sync_logs.find((run) => run.status === "running") ?? data.sync_logs[0] ?? null;
-	const sawRunning = (0, import_react.useRef)(initialRun?.status === "running");
 	const status = useGetIntegrationSyncStatus(slug, {
 		fetch: {
 			credentials: "same-origin",
 			headers: { Accept: "application/json" }
 		},
-		query: {
-			initialData: {
-				data: { run: initialRun },
-				status: 200,
-				headers: new Headers()
-			},
-			refetchInterval: 1e4
-		}
+		query: { refetchInterval: 1e4 }
 	});
 	const runSync = useRunIntegrationSync({
 		fetch: {
@@ -286,6 +277,7 @@ function SyncView({ data, slug }) {
 		} }
 	});
 	const currentRun = status.data?.status === 200 ? status.data.data.run : null;
+	const sawRunning = (0, import_react.useRef)(currentRun?.status === "running");
 	const durableRunning = currentRun?.status === "running";
 	const busy = durableRunning || runSync.isPending;
 	const response = runSync.data;

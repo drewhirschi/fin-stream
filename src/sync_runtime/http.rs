@@ -89,14 +89,6 @@ pub async fn status_global(
     .await
 }
 
-pub async fn status_scoped(
-    Extension(context): Extension<AppContext>,
-    Path(slug): Path<String>,
-    headers: HeaderMap,
-) -> Response {
-    status_for_slug(context, &slug, &headers).await
-}
-
 pub async fn logs_global(
     Extension(context): Extension<AppContext>,
     Query(query): Query<SyncQuery>,
@@ -167,6 +159,32 @@ async fn status_for_slug(context: AppContext, slug: &str, headers: &HeaderMap) -
         }
         Err(error) => runtime_error_response(&error, headers),
     }
+}
+
+pub async fn status_json(
+    context: &AppContext,
+    slug: &str,
+) -> Result<SyncStatusResponse, (StatusCode, Json<SyncErrorResponse>)> {
+    if slug != TMO_CONNECTION_SLUG {
+        return Err(json_error(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "unsupported_integration",
+            "Synchronization is not available for this integration.",
+        ));
+    }
+
+    recent_runs(context, slug)
+        .await
+        .map(|runs| SyncStatusResponse {
+            run: current_or_last(&runs),
+        })
+        .map_err(|error| {
+            json_error(
+                error.http_status(),
+                error.class_code(),
+                error.public_message(),
+            )
+        })
 }
 
 async fn logs_for_slug(context: AppContext, slug: &str, headers: &HeaderMap) -> Response {
@@ -250,6 +268,20 @@ fn simple_error(status: StatusCode, code: &str, message: &str, headers: &HeaderM
         "alert-warning"
     };
     render_fragment(status, ErrorTemplate { class, message }, "sync error")
+}
+
+fn json_error(
+    status: StatusCode,
+    code: &str,
+    message: &str,
+) -> (StatusCode, Json<SyncErrorResponse>) {
+    (
+        status,
+        Json(SyncErrorResponse {
+            error: code.to_owned(),
+            message: message.to_owned(),
+        }),
+    )
 }
 
 fn render_status(status: StatusCode, outcome: &str, run: Option<&SyncRun>) -> Response {

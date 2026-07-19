@@ -1,5 +1,5 @@
 import { A as useRouterState, B as deepEqual, E as cn, F as routerContext, G as isDangerousProtocol, H as findLast, I as DEFAULT_PROTOCOL_ALLOWLIST, J as last, K as isModuleNotFoundError, L as arraysEqual, M as useStore, N as matchContext, P as useRouter, Q as QueryClientProvider, R as createControlledPromise, U as functionalUpdate, V as encodePathLikeUrl, W as hasKeys, X as replaceEqualDeep, Y as nullReplaceEqualDeep, et as require_jsx_runtime, j as useMatch, q as isPromise, xt as __toESM, yt as require_react, z as decodePath } from "./chunks/src-DJBa3cvh.js";
-import { a as require_react_dom, i as require_client, n as seedQueryClient, r as QueryClient, t as Layout } from "./chunks/layout-BJ3kUKXl.js";
+import { a as require_react_dom, i as require_client, n as seedQueryClient, r as QueryClient, t as Layout } from "./chunks/layout-mbmpaVzD.js";
 
 //#region node_modules/@tanstack/react-router/dist/esm/utils.js
 var import_react = /* @__PURE__ */ __toESM(require_react(), 1);
@@ -5704,7 +5704,7 @@ function IntegrationLayout({ children }) {
 }
 
 //#endregion
-//#region ../target/debug/build/trust-deeds-fa710ddc270ef531/out/nextrs_tsx/__app_shell__.tsx
+//#region ../target/debug/build/trust-deeds-a7e427bfe4b403ee/out/nextrs_tsx/__app_shell__.tsx
 const qc = new QueryClient({ defaultOptions: { queries: { staleTime: 3e4 } } });
 seedQueryClient(qc);
 function nxLeaf(load) {
@@ -5716,7 +5716,38 @@ function nxLeaf(load) {
 	NxPage.preload = Lazy.preload;
 	return NxPage;
 }
-window.location.pathname + window.location.search;
+const nxInitialHref = window.location.pathname + window.location.search;
+let nxFirstLoad = true;
+const nxInflight = /* @__PURE__ */ new Map();
+function nxPrefetch(href) {
+	if (nxFirstLoad && href === nxInitialHref) {
+		nxFirstLoad = false;
+		return Promise.resolve();
+	}
+	let p = nxInflight.get(href);
+	if (!p) {
+		p = nxFetchSeeds(href).finally(() => {
+			setTimeout(() => nxInflight.delete(href), 3e3);
+		});
+		nxInflight.set(href, p);
+	}
+	return p;
+}
+async function nxFetchSeeds(href) {
+	try {
+		const res = await fetch("/__nx/prefetch?path=" + encodeURIComponent(href), { signal: AbortSignal.timeout(1e3) });
+		if (!res.ok) return;
+		for (const e of await res.json()) {
+			const state = qc.getQueryState(e.key);
+			if (state && !state.isInvalidated && Date.now() - state.dataUpdatedAt < 3e4) continue;
+			qc.setQueryData(e.key, {
+				data: e.data,
+				status: 200,
+				headers: new Headers()
+			});
+		}
+	} catch {}
+}
 const rootRoute = createRootRoute({ component: () => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(QueryClientProvider, {
 	client: qc,
 	children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Outlet, {})
@@ -5789,7 +5820,8 @@ const route_10 = createRoute({
 const route_11 = createRoute({
 	getParentRoute: () => layout_1,
 	path: "/integrations/$slug/sync",
-	component: nxLeaf(() => import("./integrations-_slug_-sync-C7NZLzkh.js"))
+	component: nxLeaf(() => import("./integrations-_slug_-sync-BQz2GCJl.js")),
+	loader: ({ location }) => nxPrefetch(location.href)
 });
 const route_12 = createRoute({
 	getParentRoute: () => layout_0,

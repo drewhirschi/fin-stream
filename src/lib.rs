@@ -386,6 +386,38 @@ mod tests {
         assert!(body.contains("/dist/"));
     }
 
+    #[tokio::test]
+    async fn integration_sync_page_seeds_status_from_extension_context() {
+        let app = test_app(true).await;
+        let login = app.clone().oneshot(login_request(PASSWORD)).await.unwrap();
+        let page = app
+            .oneshot(
+                Request::get("/integrations/tmo/sync")
+                    .header(header::COOKIE, session_cookie(&login))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(page.status(), StatusCode::OK);
+
+        let body = to_bytes(page.into_body(), usize::MAX).await.unwrap();
+        let body = String::from_utf8(body.to_vec()).unwrap();
+        let marker = r#"<script type="application/json" id="__nx_seeds__">"#;
+        let seed_start = body.find(marker).expect("status seed script") + marker.len();
+        let seed_end = body[seed_start..]
+            .find("</script>")
+            .map(|offset| seed_start + offset)
+            .expect("status seed script end");
+        let seeds: serde_json::Value = serde_json::from_str(&body[seed_start..seed_end]).unwrap();
+
+        assert_eq!(
+            seeds[0]["key"],
+            serde_json::json!(["/integrations/tmo/sync/status"])
+        );
+        assert_eq!(seeds[0]["data"], serde_json::json!({ "run": null }));
+    }
+
     #[test]
     fn generated_route_registry_contains_canvas_react_page() {
         let registry = generated_registry();

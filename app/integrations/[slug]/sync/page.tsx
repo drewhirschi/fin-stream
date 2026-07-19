@@ -28,16 +28,9 @@ export default function Sync() {
 
 function SyncView({ data, slug }: { data: IntegrationData; slug: string }) {
   const queryClient = useQueryClient();
-  const initialRun = data.sync_logs.find((run) => run.status === "running") ?? data.sync_logs[0] ?? null;
-  const sawRunning = useRef(initialRun?.status === "running");
   const status = useGetIntegrationSyncStatus(slug, {
     fetch: { credentials: "same-origin", headers: { Accept: "application/json" } },
     query: {
-      initialData: {
-        data: { run: initialRun },
-        status: 200,
-        headers: new Headers(),
-      },
       refetchInterval: 10_000,
     },
   });
@@ -53,6 +46,7 @@ function SyncView({ data, slug }: { data: IntegrationData; slug: string }) {
     },
   });
   const currentRun = status.data?.status === 200 ? status.data.data.run : null;
+  const sawRunning = useRef(currentRun?.status === "running");
   const durableRunning = currentRun?.status === "running";
   const busy = durableRunning || runSync.isPending;
   const response = runSync.data;

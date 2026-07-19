@@ -15018,7 +15018,11 @@ function readSeeds() {
 	}
 }
 function seedQueryClient(queryClient) {
-	for (const entry of readSeeds()) queryClient.setQueryData(entry.key, entry.data);
+	for (const entry of readSeeds()) queryClient.setQueryData(entry.key, {
+		data: entry.data,
+		status: 200,
+		headers: new Headers()
+	});
 }
 
 //#endregion
