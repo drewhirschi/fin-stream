@@ -10,8 +10,7 @@ export default defineConfig({
       client: "react-query",
       httpClient: "fetch",
       baseUrl: "/",
-      // NextRS owns the generated root barrel, so preserve it while replacing the API files.
-      clean: ["!index.ts"],
+      clean: true,
       prettier: true,
     },
   },

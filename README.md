@@ -1,6 +1,6 @@
 # Trust Deeds
 
-The main application is a NextRS 0.3.8 app using idiomatic React `page.tsx` and `layout.tsx`
+The main application is a NextRS 0.4.2 app using idiomatic React `page.tsx` and `layout.tsx`
 conventions with a persistent application shell, shadcn-style components, and
 Rust `route.rs` JSON/action boundaries. It has revocable libSQL authentication plus the
 manual Streams/Forecast vertical slice: accounts, an explicit dated cash
@@ -15,9 +15,8 @@ and middleware stack.
 cp .env.example .env
 # Change ADMIN_PASSWORD in .env before using it.
 npm ci --prefix client --no-audit --no-fund
-# After changing a #[nextrs::api] contract:
-npm run --prefix client gen
-npm run --prefix client css
+# Generates OpenAPI, the typed client, and CSS, then typechecks the client.
+npm run --prefix client build
 cargo install cargo-nextrs-dev # once per machine
 cargo dev
 ```
@@ -44,8 +43,7 @@ Delete the local database only when you explicitly want to reset local data.
 cargo test --locked --no-default-features --features local-db
 cargo clippy --locked --no-default-features --features local-db --all-targets -- -D warnings
 npm ci --prefix client --no-audit --no-fund
-npm run --prefix client css
-npm run --prefix client typecheck
+npm run --prefix client build
 cargo build --release --locked --no-default-features --features local-db --bin trust-deeds
 
 # Inventory the upgraded PostgreSQL source. This is a read-only preflight;
@@ -110,8 +108,8 @@ environment variables:
 Production users and password hashes are imported from PostgreSQL; old login
 sessions are intentionally discarded. Do not put `ADMIN_PASSWORD` in Vercel.
 
-`vercel.json` installs the React client, regenerates the Tailwind/shadcn CSS,
-typechecks every route component, then builds
+`vercel.json` installs the React client, regenerates the typed API client and
+Tailwind/shadcn CSS, typechecks every route component, then builds
 only the remote libSQL client. Normal Cargo commands and `cargo dev` use the
 remote libSQL client while serving static assets from disk. The Vercel build
 also selects `remote-db` explicitly without the `local-server` feature, so

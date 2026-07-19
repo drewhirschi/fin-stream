@@ -41,9 +41,7 @@ jobs:
         run: npm ci --prefix client --no-audit --no-fund
 
       - name: Build and typecheck client
-        run: |
-          npm run --prefix client css
-          npm run --prefix client typecheck
+        run: npm run --prefix client build
 
       - name: Rust format
         run: cargo fmt --all -- --check

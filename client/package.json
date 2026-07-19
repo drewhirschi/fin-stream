@@ -9,6 +9,7 @@
     "dump": "NEXTRS_SKIP_BUNDLE=1 cargo run --bin dump-openapi",
     "orval": "orval --config ./orval.config.ts",
     "gen": "npm run dump && npm run orval",
+    "build": "npm run gen && npm run css && npm run typecheck",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
