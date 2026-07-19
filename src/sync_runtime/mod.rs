@@ -1,6 +1,7 @@
-use std::{error::Error, fmt};
+use std::{error::Error, fmt, panic::AssertUnwindSafe, time::Duration as StdDuration};
 
 use async_trait::async_trait;
+use futures_util::FutureExt;
 use libsql::TransactionBehavior;
 use time::{Duration, OffsetDateTime};
 
@@ -26,11 +27,16 @@ pub mod http;
 
 pub const TMO_CONNECTION_SLUG: &str = "tmo";
 
-/// Must remain greater than the deployed function's hard execution limit plus
-/// clock/network skew. Until Vercel `maxDuration` is measured and pinned below
-/// this value, the runtime uses a conservative twenty-minute stale boundary.
-/// Production must keep the platform limit plus skew below this cutoff.
-const STALE_AFTER: Duration = Duration::minutes(20);
+/// Whole-run deadline, including provider capture and the durable terminal
+/// transition. Historical production TMO runs normally complete in 2-4
+/// seconds and have not exceeded 26 seconds.
+const EXECUTION_TIMEOUT: StdDuration = StdDuration::from_secs(60);
+const TERMINAL_TRANSITION_TIMEOUT: StdDuration = StdDuration::from_secs(10);
+
+/// Crash-recovery lease. This remains comfortably above EXECUTION_TIMEOUT so
+/// a live owner gets the first chance to commit its timeout transition, while
+/// a hard-killed process cannot block retries for the old twenty-minute window.
+const STALE_AFTER: Duration = Duration::minutes(2);
 
 #[async_trait]
 pub trait TmoProviderSession: Send + Sync {
@@ -104,6 +110,7 @@ pub struct TmoSyncService<'service> {
     cipher: &'service CredentialCipher,
     provider_factory: &'service dyn TmoProviderFactory,
     clock: &'service dyn SyncClock,
+    execution_timeout: StdDuration,
 }
 
 impl<'service> TmoSyncService<'service> {
@@ -118,6 +125,7 @@ impl<'service> TmoSyncService<'service> {
             cipher,
             provider_factory,
             clock,
+            execution_timeout: EXECUTION_TIMEOUT,
         }
     }
 
@@ -132,7 +140,14 @@ impl<'service> TmoSyncService<'service> {
             cipher,
             provider_factory,
             clock,
+            execution_timeout: EXECUTION_TIMEOUT,
         }
+    }
+
+    #[cfg(test)]
+    fn with_execution_timeout(mut self, execution_timeout: StdDuration) -> Self {
+        self.execution_timeout = execution_timeout;
+        self
     }
 
     pub async fn run_manual(&self) -> Result<SyncExecution, SyncRuntimeError> {
@@ -195,17 +210,53 @@ impl<'service> TmoSyncService<'service> {
             }
         };
 
+        let guarded = AssertUnwindSafe(self.execute_claimed(&run)).catch_unwind();
+        match tokio::time::timeout(self.execution_timeout, guarded).await {
+            Ok(Ok(Ok(execution))) => Ok(execution),
+            Ok(Ok(Err(error))) => self.recover_claim(&run, error).await,
+            Ok(Err(_)) => {
+                self.recover_claim(&run, SyncRuntimeError::UnexpectedTermination)
+                    .await
+            }
+            Err(_) => {
+                self.recover_claim(&run, SyncRuntimeError::DeadlineExceeded)
+                    .await
+            }
+        }
+    }
+
+    async fn execute_claimed(&self, run: &SyncRun) -> Result<SyncExecution, SyncRuntimeError> {
         let connection_result = self.load_tmo_connection().await;
         let (connection_id, capture_result) = match connection_result {
             Ok(connection_id) => (Some(connection_id), self.capture(connection_id).await),
             Err(error) => (None, Err(error)),
         };
         match capture_result {
-            Ok(capture) => match self.finish_success(&run, &capture).await {
+            Ok(capture) => match self.finish_success(run, &capture).await {
                 Ok(completed) => Ok(SyncExecution::Completed(completed)),
-                Err(error) => self.finish_failure(&run, connection_id, error).await,
+                Err(error) => self.finish_failure(run, connection_id, &error).await,
             },
-            Err(error) => self.finish_failure(&run, connection_id, error).await,
+            Err(error) => self.finish_failure(run, connection_id, &error).await,
+        }
+    }
+
+    /// Best-effort terminal transition for every exit path after a claim.
+    /// If a competing actor already completed the run, preserve that winner;
+    /// if the database itself is unavailable, the short stale lease remains
+    /// the hard-kill fallback on the next attempt.
+    async fn recover_claim(
+        &self,
+        run: &SyncRun,
+        failure: SyncRuntimeError,
+    ) -> Result<SyncExecution, SyncRuntimeError> {
+        match tokio::time::timeout(
+            TERMINAL_TRANSITION_TIMEOUT,
+            self.finish_failure(run, None, &failure),
+        )
+        .await
+        {
+            Ok(Ok(execution)) => Ok(execution),
+            Ok(Err(_)) | Err(_) => Err(failure),
         }
     }
 
@@ -350,7 +401,7 @@ impl<'service> TmoSyncService<'service> {
         &self,
         run: &SyncRun,
         connection_id: Option<i64>,
-        failure: SyncRuntimeError,
+        failure: &SyncRuntimeError,
     ) -> Result<SyncExecution, SyncRuntimeError> {
         let public_message = failure.public_message();
         tracing::error!(
@@ -403,6 +454,7 @@ pub enum SyncFailureClass {
     Provider,
     Storage,
     Coordination,
+    Execution,
 }
 
 impl SyncFailureClass {
@@ -412,6 +464,7 @@ impl SyncFailureClass {
             Self::Provider => axum::http::StatusCode::BAD_GATEWAY,
             Self::Storage => axum::http::StatusCode::SERVICE_UNAVAILABLE,
             Self::Coordination => axum::http::StatusCode::CONFLICT,
+            Self::Execution => axum::http::StatusCode::SERVICE_UNAVAILABLE,
         }
     }
 }
@@ -469,6 +522,8 @@ pub enum SyncRuntimeError {
     Integration(IntegrationError),
     Operation(OperationError),
     Storage(anyhow::Error),
+    DeadlineExceeded,
+    UnexpectedTermination,
 }
 
 impl SyncRuntimeError {
@@ -505,6 +560,8 @@ impl SyncRuntimeError {
                 "Scheduled synchronization is disabled."
             }
             Self::Operation(_) => "The TMO execution record changed before completion.",
+            Self::DeadlineExceeded => "TMO synchronization exceeded its execution deadline.",
+            Self::UnexpectedTermination => "TMO synchronization stopped unexpectedly.",
         }
     }
 
@@ -524,6 +581,7 @@ impl SyncRuntimeError {
                 SyncFailureClass::Storage
             }
             Self::Operation(_) => SyncFailureClass::Coordination,
+            Self::DeadlineExceeded | Self::UnexpectedTermination => SyncFailureClass::Execution,
         }
     }
 
@@ -533,6 +591,7 @@ impl SyncRuntimeError {
             SyncFailureClass::Provider => "provider",
             SyncFailureClass::Storage => "storage",
             SyncFailureClass::Coordination => "coordination",
+            SyncFailureClass::Execution => "execution",
         }
     }
 
@@ -558,7 +617,9 @@ impl Error for SyncRuntimeError {
             Self::MissingConnection
             | Self::MissingCredential
             | Self::Configuration(_)
-            | Self::InvalidCapture(_) => None,
+            | Self::InvalidCapture(_)
+            | Self::DeadlineExceeded
+            | Self::UnexpectedTermination => None,
         }
     }
 }

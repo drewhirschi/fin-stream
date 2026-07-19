@@ -8,7 +8,7 @@ use super::{
     SyncRun, SyncRunStatus,
 };
 
-const STALE_EXECUTION_MESSAGE: &str = "execution exceeded platform maximum duration";
+const STALE_EXECUTION_MESSAGE: &str = "execution owner expired before recording completion";
 
 /// Durable coordination for inline serverless work.
 ///
@@ -272,9 +272,9 @@ impl<'connection> OperationRepository<'connection> {
         Ok(outcome)
     }
 
-    /// Mark invocations that are provably older than the caller's hard
-    /// platform-duration-plus-skew cutoff. The cutoff is deliberately supplied
-    /// by the caller; this repository does not guess deployment limits.
+    /// Mark invocations older than the caller's execution-ownership lease.
+    /// The cutoff is deliberately supplied by the caller; this repository
+    /// does not guess service or deployment deadlines.
     pub async fn interrupt_stale(
         &self,
         finished_at: &str,

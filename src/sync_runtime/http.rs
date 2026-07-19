@@ -19,9 +19,10 @@ use crate::{
 };
 
 use super::{
-    DirectTmoProviderFactory, SyncExecution, SyncRuntimeError, SystemSyncClock,
-    TMO_CONNECTION_SLUG, TmoSyncService, current_or_last,
+    DirectTmoProviderFactory, STALE_AFTER, SyncExecution, SyncRuntimeError, SystemSyncClock,
+    TMO_CONNECTION_SLUG, TmoSyncService, current_or_last, format_utc_millis,
 };
+use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
 #[derive(Debug, Default, Deserialize)]
 pub struct SyncQuery {
@@ -210,10 +211,38 @@ async fn recent_runs(context: &AppContext, slug: &str) -> Result<Vec<SyncRun>, S
         .connection()
         .await
         .map_err(SyncRuntimeError::Storage)?;
-    OperationRepository::new(&connection)
+    let operations = OperationRepository::new(&connection);
+    let mut runs = operations
         .list_recent(slug, 20)
         .await
-        .map_err(SyncRuntimeError::Operation)
+        .map_err(SyncRuntimeError::Operation)?;
+    let now = OffsetDateTime::now_utc();
+    if runs
+        .iter()
+        .any(|run| run.status == SyncRunStatus::Running && run_is_stale(run, now))
+    {
+        match operations
+            .interrupt_stale(
+                &format_utc_millis(now),
+                &format_utc_millis(now - STALE_AFTER),
+            )
+            .await
+        {
+            Ok(_) | Err(crate::operations::OperationError::ReadOnly) => {}
+            Err(error) => return Err(SyncRuntimeError::Operation(error)),
+        }
+        runs = operations
+            .list_recent(slug, 20)
+            .await
+            .map_err(SyncRuntimeError::Operation)?;
+    }
+    Ok(runs)
+}
+
+fn run_is_stale(run: &SyncRun, now: OffsetDateTime) -> bool {
+    OffsetDateTime::parse(&run.started_at, &Rfc3339)
+        .map(|started| started < now - STALE_AFTER)
+        .unwrap_or(true)
 }
 
 fn execution_response(execution: &SyncExecution, headers: &HeaderMap) -> Response {
@@ -434,5 +463,63 @@ mod tests {
         let log_html = LogsTemplate { runs: &[run] }.render().unwrap();
         assert!(log_html.contains("12,345"));
         assert!(log_html.contains("data-local="));
+    }
+
+    #[test]
+    fn stale_status_boundary_matches_the_execution_lease() {
+        let mut run = failed_execution().run().clone();
+        run.status = SyncRunStatus::Running;
+        run.finished_at = None;
+        let now = OffsetDateTime::parse("2026-07-14T12:02:00Z", &Rfc3339).unwrap();
+
+        assert!(!run_is_stale(&run, now));
+        run.started_at = "2026-07-14T11:59:59.999Z".into();
+        assert!(run_is_stale(&run, now));
+    }
+
+    #[cfg(feature = "local-db")]
+    #[tokio::test]
+    async fn status_poll_durably_repairs_a_hard_killed_owner() {
+        let database = libsql::Builder::new_local(":memory:")
+            .build()
+            .await
+            .unwrap();
+        let context = AppContext::from_database(database).await.unwrap();
+        let connection = context.connection().await.unwrap();
+        let operations = OperationRepository::new(&connection);
+        operations
+            .enable_writes("2020-01-01T00:00:00.000Z")
+            .await
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO intg_integration_connection (slug, name, provider) \
+                 VALUES ('tmo', 'The Mortgage Office', 'mortgage_office')",
+                (),
+            )
+            .await
+            .unwrap();
+        let claimed = operations
+            .claim_manual(TMO_CONNECTION_SLUG, "2020-01-01T00:00:01.000Z")
+            .await
+            .unwrap();
+        assert!(matches!(
+            claimed,
+            crate::operations::ClaimOutcome::Claimed(_)
+        ));
+
+        let runs = recent_runs(&context, TMO_CONNECTION_SLUG).await.unwrap();
+        assert_eq!(runs[0].status, SyncRunStatus::Error);
+        assert_eq!(
+            runs[0].error_message.as_deref(),
+            Some("execution owner expired before recording completion")
+        );
+        assert!(
+            operations
+                .current_run(TMO_CONNECTION_SLUG)
+                .await
+                .unwrap()
+                .is_none()
+        );
     }
 }

@@ -41,6 +41,15 @@ use tower_sessions::{Expiry, SessionManagerLayer, SessionStore, cookie::SameSite
 // the local server and Vercel function consume exactly the same route graph.
 include!(concat!(env!("OUT_DIR"), "/nextrs_routes.rs"));
 
+/// Install one process-wide, secret-safe application log sink. Repeated calls
+/// are harmless, which keeps the local and Vercel entry points symmetrical.
+pub fn init_tracing() {
+    let _ = tracing_subscriber::fmt()
+        .with_ansi(false)
+        .with_max_level(tracing::Level::INFO)
+        .try_init();
+}
+
 pub async fn configured_router() -> anyhow::Result<Router> {
     let config = config::AppConfig::from_env()?;
     let credential_cipher = Arc::new(crypto::CredentialCipher::new(

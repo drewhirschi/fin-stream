@@ -2,6 +2,7 @@ use std::sync::{
     Arc,
     atomic::{AtomicUsize, Ordering},
 };
+use std::time::Duration as StdDuration;
 
 use async_trait::async_trait;
 use axum::http::StatusCode;
@@ -32,6 +33,8 @@ const TEST_KEY: &str = "sync-runtime-test-key";
 enum FixtureMode {
     Success,
     FailOverview,
+    HangOverview,
+    PanicOverview,
     PartialDetail,
     InvalidDate,
     CompletionRace,
@@ -96,6 +99,12 @@ impl TmoProviderSession for FixtureSession {
             return Err(ProviderError::RequestRejected {
                 provider: ProviderName::Tmo,
             });
+        }
+        if self.mode == FixtureMode::HangOverview {
+            return std::future::pending().await;
+        }
+        if self.mode == FixtureMode::PanicOverview {
+            panic!("simulated provider panic");
         }
         Ok(TmoOverview {
             portfolio_value: 510_000.0,
@@ -435,6 +444,138 @@ async fn fatal_provider_failure_is_sanitized_and_durably_completed() {
 }
 
 #[tokio::test]
+async fn execution_deadline_completes_the_claim_and_allows_an_immediate_retry() {
+    let (context, cipher, _) = test_context(true).await;
+    let hanging_factory = FixtureFactory::new(FixtureMode::HangOverview);
+    let clock = fixed_clock();
+    let hanging_service = service(&context, &cipher, &hanging_factory, &clock)
+        .with_execution_timeout(StdDuration::from_millis(20));
+
+    let outcome = hanging_service.run_manual().await.unwrap();
+    let SyncExecution::Failed { run, class } = outcome else {
+        panic!("expected a deadline failure");
+    };
+    assert_eq!(class, SyncFailureClass::Execution);
+    assert_eq!(class.http_status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(run.status, SyncRunStatus::Error);
+    assert_eq!(
+        run.error_message.as_deref(),
+        Some("TMO synchronization exceeded its execution deadline.")
+    );
+
+    let connection = context.connection().await.unwrap();
+    assert!(
+        OperationRepository::new(&connection)
+            .current_run(TMO_CONNECTION_SLUG)
+            .await
+            .unwrap()
+            .is_none()
+    );
+
+    let retry_factory = FixtureFactory::new(FixtureMode::Success);
+    let retry = service(&context, &cipher, &retry_factory, &clock)
+        .run_manual()
+        .await
+        .unwrap();
+    assert!(matches!(retry, SyncExecution::Completed(_)));
+    assert_eq!(
+        scalar_i64(
+            &connection,
+            "SELECT COUNT(*) FROM sync_log WHERE status = 'running'"
+        )
+        .await,
+        0
+    );
+    assert_eq!(
+        scalar_i64(
+            &connection,
+            "SELECT COUNT(*) FROM sync_log WHERE status = 'error'"
+        )
+        .await,
+        1
+    );
+    assert_eq!(
+        scalar_i64(
+            &connection,
+            "SELECT COUNT(*) FROM sync_log WHERE status = 'success'"
+        )
+        .await,
+        1
+    );
+}
+
+#[tokio::test]
+async fn provider_panic_is_caught_and_durably_completed() {
+    let (context, cipher, _) = test_context(true).await;
+    let factory = FixtureFactory::new(FixtureMode::PanicOverview);
+    let clock = fixed_clock();
+
+    let outcome = service(&context, &cipher, &factory, &clock)
+        .run_manual()
+        .await
+        .unwrap();
+    let SyncExecution::Failed { run, class } = outcome else {
+        panic!("expected an unexpected-termination failure");
+    };
+    assert_eq!(class, SyncFailureClass::Execution);
+    assert_eq!(run.status, SyncRunStatus::Error);
+    assert_eq!(
+        run.error_message.as_deref(),
+        Some("TMO synchronization stopped unexpectedly.")
+    );
+    let connection = context.connection().await.unwrap();
+    assert!(
+        OperationRepository::new(&connection)
+            .current_run(TMO_CONNECTION_SLUG)
+            .await
+            .unwrap()
+            .is_none()
+    );
+}
+
+#[tokio::test]
+async fn overlapping_activity_observes_one_owner_then_timeout_releases_the_lock() {
+    let (context, cipher, _) = test_context(true).await;
+    let factory = FixtureFactory::new(FixtureMode::HangOverview);
+    let clock = fixed_clock();
+    let first = service(&context, &cipher, &factory, &clock)
+        .with_execution_timeout(StdDuration::from_millis(50));
+    let second = service(&context, &cipher, &factory, &clock)
+        .with_execution_timeout(StdDuration::from_millis(50));
+
+    let (owner, duplicate) = tokio::join!(first.run_manual(), async {
+        loop {
+            let connection = context.connection().await.unwrap();
+            if OperationRepository::new(&connection)
+                .current_run(TMO_CONNECTION_SLUG)
+                .await
+                .unwrap()
+                .is_some()
+            {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+        second.run_manual().await
+    });
+
+    assert!(matches!(owner.unwrap(), SyncExecution::Failed { .. }));
+    assert!(matches!(
+        duplicate.unwrap(),
+        SyncExecution::AlreadyRunning(_)
+    ));
+    assert_eq!(factory.login_calls.load(Ordering::SeqCst), 1);
+    let connection = context.connection().await.unwrap();
+    assert!(
+        OperationRepository::new(&connection)
+            .current_run(TMO_CONNECTION_SLUG)
+            .await
+            .unwrap()
+            .is_none()
+    );
+}
+
+#[tokio::test]
 async fn scheduled_redelivery_never_calls_the_provider_twice_for_one_slot() {
     let (context, cipher, _) = test_context(true).await;
     OperationRepository::new(&context.connection().await.unwrap())
@@ -550,11 +691,11 @@ async fn overlapping_claim_never_calls_provider() {
 }
 
 #[tokio::test]
-async fn a_claim_exactly_at_the_twenty_minute_boundary_is_still_live() {
+async fn a_claim_exactly_at_the_two_minute_boundary_is_still_live() {
     let (context, cipher, _) = test_context(true).await;
     let connection = context.connection().await.unwrap();
     OperationRepository::new(&connection)
-        .claim_manual(TMO_CONNECTION_SLUG, "2026-07-14T11:40:00.000Z")
+        .claim_manual(TMO_CONNECTION_SLUG, "2026-07-14T11:58:00.000Z")
         .await
         .unwrap();
     let factory = FixtureFactory::new(FixtureMode::Success);

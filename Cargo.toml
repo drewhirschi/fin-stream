@@ -51,6 +51,7 @@ base64 = "0.22"
 blake3 = "1"
 chrono = { version = "0.4", default-features = false, features = ["std"] }
 dotenvy = { version = "0.15", optional = true }
+futures-util = "0.3"
 hmac = "0.12"
 libsql = { version = "=0.9.30", default-features = false }
 nextrs = { version = "0.4", default-features = false }
@@ -67,6 +68,7 @@ tower-livereload = "0.9"
 tower-http = { version = "0.6", features = ["fs"], optional = true }
 tower-sessions = { version = "0.14", default-features = false, features = ["axum-core"] }
 tracing = "0.1"
+tracing-subscriber = "0.3"
 utoipa = "5"
 url = "2"
 vercel_runtime = { version = "2", features = ["axum"], optional = true }
