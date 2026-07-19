@@ -1,6 +1,7 @@
 use std::{fmt, str::FromStr};
 
 use serde::Serialize;
+use utoipa::ToSchema;
 
 use super::OperationError;
 
@@ -47,7 +48,7 @@ pub struct OperationControl {
     pub updated_at: String,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SyncRunStatus {
     Running,
@@ -80,7 +81,7 @@ impl FromStr for SyncRunStatus {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
 pub struct SyncRun {
     pub id: i64,
     pub connection_slug: String,

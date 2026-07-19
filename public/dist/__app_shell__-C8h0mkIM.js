@@ -1,5 +1,5 @@
-import { A as useRouterState, B as deepEqual, E as cn, F as routerContext, G as isDangerousProtocol, H as findLast, I as DEFAULT_PROTOCOL_ALLOWLIST, J as last, K as isModuleNotFoundError, L as arraysEqual, M as useStore, N as matchContext, P as useRouter, Q as require_jsx_runtime, R as createControlledPromise, U as functionalUpdate, V as encodePathLikeUrl, W as hasKeys, X as replaceEqualDeep, Y as nullReplaceEqualDeep, Z as QueryClientProvider, _t as __toESM, ht as require_react, j as useMatch, q as isPromise, z as decodePath } from "./chunks/src-ZnV_ftAe.js";
-import { a as require_react_dom, i as require_client, n as seedQueryClient, r as QueryClient, t as Layout } from "./chunks/layout-zpWnaYN9.js";
+import { A as useRouterState, B as deepEqual, E as cn, F as routerContext, G as isDangerousProtocol, H as findLast, I as DEFAULT_PROTOCOL_ALLOWLIST, J as last, K as isModuleNotFoundError, L as arraysEqual, M as useStore, N as matchContext, P as useRouter, Q as QueryClientProvider, R as createControlledPromise, U as functionalUpdate, V as encodePathLikeUrl, W as hasKeys, X as replaceEqualDeep, Y as nullReplaceEqualDeep, et as require_jsx_runtime, j as useMatch, q as isPromise, xt as __toESM, yt as require_react, z as decodePath } from "./chunks/src-DJBa3cvh.js";
+import { a as require_react_dom, i as require_client, n as seedQueryClient, r as QueryClient, t as Layout } from "./chunks/layout-BJ3kUKXl.js";
 
 //#region node_modules/@tanstack/react-router/dist/esm/utils.js
 var import_react = /* @__PURE__ */ __toESM(require_react(), 1);
@@ -5704,7 +5704,7 @@ function IntegrationLayout({ children }) {
 }
 
 //#endregion
-//#region ../target/debug/build/trust-deeds-ea3f8debbfea7f14/out/nextrs_tsx/__app_shell__.tsx
+//#region ../target/debug/build/trust-deeds-fa710ddc270ef531/out/nextrs_tsx/__app_shell__.tsx
 const qc = new QueryClient({ defaultOptions: { queries: { staleTime: 3e4 } } });
 seedQueryClient(qc);
 function nxLeaf(load) {
@@ -5734,72 +5734,72 @@ const layout_1 = createRoute({
 const route_0 = createRoute({
 	getParentRoute: () => layout_0,
 	path: "/",
-	component: nxLeaf(() => import("./index-BujcrbSB.js"))
+	component: nxLeaf(() => import("./index-D4vL7XwN.js"))
 });
 const route_1 = createRoute({
 	getParentRoute: () => layout_0,
 	path: "/canvas",
-	component: nxLeaf(() => import("./canvas-d2tCy19K.js"))
+	component: nxLeaf(() => import("./canvas-BpoEIFko.js"))
 });
 const route_2 = createRoute({
 	getParentRoute: () => layout_0,
 	path: "/forecast",
-	component: nxLeaf(() => import("./forecast-DuvozfW3.js"))
+	component: nxLeaf(() => import("./forecast-RWb_wO05.js"))
 });
 const route_3 = createRoute({
 	getParentRoute: () => layout_0,
 	path: "/inbox",
-	component: nxLeaf(() => import("./inbox-CxU_ZkkX.js"))
+	component: nxLeaf(() => import("./inbox-B1Ak7qxu.js"))
 });
 const route_4 = createRoute({
 	getParentRoute: () => layout_0,
 	path: "/inbox/$email_id",
-	component: nxLeaf(() => import("./inbox-_email_id_-Bzag-5Qo.js"))
+	component: nxLeaf(() => import("./inbox-_email_id_-DSwvGEu7.js"))
 });
 const route_5 = createRoute({
 	getParentRoute: () => layout_0,
 	path: "/integrations",
-	component: nxLeaf(() => import("./integrations-BEV_MD2j.js"))
+	component: nxLeaf(() => import("./integrations-DA2oQEpt.js"))
 });
 const route_6 = createRoute({
 	getParentRoute: () => layout_1,
 	path: "/integrations/$slug",
-	component: nxLeaf(() => import("./integrations-_slug_-U5O0f1Kq.js"))
+	component: nxLeaf(() => import("./integrations-_slug_-CFVjLdR2.js"))
 });
 const route_7 = createRoute({
 	getParentRoute: () => layout_1,
 	path: "/integrations/$slug/debug",
-	component: nxLeaf(() => import("./integrations-_slug_-debug-C4eBx8ad.js"))
+	component: nxLeaf(() => import("./integrations-_slug_-debug-B_yjZzua.js"))
 });
 const route_8 = createRoute({
 	getParentRoute: () => layout_1,
 	path: "/integrations/$slug/loans",
-	component: nxLeaf(() => import("./integrations-_slug_-loans-CkCZRfSY.js"))
+	component: nxLeaf(() => import("./integrations-_slug_-loans-CNYW3LLe.js"))
 });
 const route_9 = createRoute({
 	getParentRoute: () => layout_1,
 	path: "/integrations/$slug/loans/$loan_account",
-	component: nxLeaf(() => import("./integrations-_slug_-loans-_loan_account_-CraKuxXp.js"))
+	component: nxLeaf(() => import("./integrations-_slug_-loans-_loan_account_-sc1Ndgv_.js"))
 });
 const route_10 = createRoute({
 	getParentRoute: () => layout_1,
 	path: "/integrations/$slug/payments",
-	component: nxLeaf(() => import("./integrations-_slug_-payments-C8HIEyD8.js"))
+	component: nxLeaf(() => import("./integrations-_slug_-payments-DgSYwlsz.js"))
 });
 const route_11 = createRoute({
 	getParentRoute: () => layout_1,
 	path: "/integrations/$slug/sync",
-	component: nxLeaf(() => import("./integrations-_slug_-sync-CzQMvZBU.js"))
+	component: nxLeaf(() => import("./integrations-_slug_-sync-C7NZLzkh.js"))
 });
 const route_12 = createRoute({
 	getParentRoute: () => layout_0,
 	path: "/login",
-	component: nxLeaf(() => import("./login-DuJvxwlg.js"))
+	component: nxLeaf(() => import("./login-BtwQrInp.js"))
 });
 const route_13 = createRoute({
 	getParentRoute: () => layout_0,
 	path: "/streams",
-	component: nxLeaf(() => import("./streams-COT3y1SV.js"))
+	component: nxLeaf(() => import("./streams-BREnq7jM.js"))
 });
 const router = createRouter({
 	routeTree: rootRoute.addChildren([layout_0.addChildren([

@@ -1,3 +1,4 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { LoaderCircle, Play, ShieldCheck } from "lucide-react";
 import {
   Badge,
@@ -10,14 +11,12 @@ import {
   IntegrationBoundary,
   Page,
   dateTime,
-  useApi,
+  getGetIntegrationSyncStatusQueryKey,
+  useGetIntegrationSyncStatus,
+  useRunIntegrationSync,
 } from "@trust-deeds/client";
-import { useEffect, useRef, useState } from "react";
-import type { IntegrationData, SyncRun } from "@/types";
-
-interface SyncStatus {
-  run: SyncRun | null;
-}
+import { useEffect, useRef } from "react";
+import type { IntegrationData } from "@/types";
 
 export default function Sync() {
   return (
@@ -28,72 +27,69 @@ export default function Sync() {
 }
 
 function SyncView({ data, slug }: { data: IntegrationData; slug: string }) {
+  const queryClient = useQueryClient();
   const initialRun = data.sync_logs.find((run) => run.status === "running") ?? data.sync_logs[0] ?? null;
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [watchingForAutomaticRun, setWatchingForAutomaticRun] = useState(true);
   const sawRunning = useRef(initialRun?.status === "running");
-  const status = useApi<SyncStatus>(
-    ["integration-sync-status", slug],
-    `/integrations/${encodeURIComponent(slug)}/sync/status`,
-    {
-      initialData: { run: initialRun },
-      refetchInterval: (query) =>
-        query.state.data?.run?.status === "running" || watchingForAutomaticRun ? 1_500 : false,
+  const status = useGetIntegrationSyncStatus(slug, {
+    fetch: { credentials: "same-origin", headers: { Accept: "application/json" } },
+    query: {
+      initialData: {
+        data: { run: initialRun },
+        status: 200,
+        headers: new Headers(),
+      },
+      refetchInterval: 10_000,
     },
-  );
-  const durableRunning = status.data?.run?.status === "running";
-  const busy = submitting || durableRunning;
-
-  useEffect(() => {
-    const timeout = window.setTimeout(() => setWatchingForAutomaticRun(false), 10_000);
-    return () => window.clearTimeout(timeout);
-  }, []);
+  });
+  const runSync = useRunIntegrationSync({
+    fetch: { credentials: "same-origin", headers: { Accept: "application/json" } },
+    mutation: {
+      onSettled: async () => {
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: getGetIntegrationSyncStatusQueryKey(slug) }),
+          queryClient.invalidateQueries({ queryKey: ["integration", slug] }),
+        ]);
+      },
+    },
+  });
+  const currentRun = status.data?.status === 200 ? status.data.data.run : null;
+  const durableRunning = currentRun?.status === "running";
+  const busy = durableRunning || runSync.isPending;
+  const response = runSync.data;
+  const alreadyRunning =
+    response?.status === 409 && "outcome" in response.data && response.data.outcome === "already_running";
+  const responseMessage =
+    response && "message" in response.data
+      ? response.data.message
+      : response && "run" in response.data
+        ? response.data.run.error_message
+        : null;
+  const error = runSync.isError
+    ? "The sync request could not be completed."
+    : response && response.status >= 400 && !alreadyRunning
+      ? responseMessage || `The sync could not be started (${response.status}).`
+      : null;
 
   useEffect(() => {
     if (durableRunning) {
       sawRunning.current = true;
       return;
     }
-    if (sawRunning.current && status.data) {
+    if (sawRunning.current && status.data?.status === 200) {
       sawRunning.current = false;
-      window.location.reload();
+      void queryClient.invalidateQueries({ queryKey: ["integration", slug] });
     }
-  }, [durableRunning, status.data]);
-
-  const run = async () => {
-    setSubmitting(true);
-    setError(null);
-    try {
-      const response = await fetch(`/integrations/${encodeURIComponent(slug)}/sync/run`, {
-        method: "POST",
-        credentials: "same-origin",
-        headers: { Accept: "application/json" },
-      });
-      if (!response.ok && response.status !== 409) {
-        throw new Error(`The sync could not be started (${response.status}).`);
-      }
-      if (response.status === 409) {
-        const refreshed = await status.refetch();
-        if (refreshed.data?.run?.status !== "running") {
-          throw new Error("The sync could not be started. Check the integration configuration and try again.");
-        }
-        return;
-      }
-      window.location.reload();
-    } catch (runError) {
-      setError(runError instanceof Error ? runError.message : "The sync could not be started.");
-    } finally {
-      setSubmitting(false);
-    }
-  };
+  }, [durableRunning, queryClient, slug, status.data?.status]);
 
   return (
     <Page
       title="Sync"
       description="Provider refresh history and operational controls."
       actions={
-        <Button onClick={run} disabled={busy || data.control.mode !== "enabled"}>
+        <Button
+          onClick={() => runSync.mutate({ slug })}
+          disabled={busy || data.control.mode !== "enabled"}
+        >
           {busy ? <LoaderCircle className="size-4 animate-spin" /> : <Play className="size-4" />}
           {busy ? "Syncing…" : "Run sync"}
         </Button>
@@ -106,9 +102,9 @@ function SyncView({ data, slug }: { data: IntegrationData; slug: string }) {
         >
           <LoaderCircle className="size-5 shrink-0 animate-spin" />
           <div>
-            <p className="font-medium">Sync in progress</p>
+            <p className="font-medium">Syncing</p>
             <p className="mt-1 opacity-80">
-              Started {dateTime(status.data?.run?.started_at)}. This page will update automatically when it finishes.
+              Started {dateTime(currentRun.started_at)}. This page checks for updates every ten seconds.
             </p>
           </div>
         </div>

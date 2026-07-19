@@ -7,8 +7,9 @@ use axum::{
     http::{HeaderMap, StatusCode, header},
     response::{Html, IntoResponse, Response},
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
+use utoipa::ToSchema;
 
 use crate::{
     crypto::CredentialCipher,
@@ -25,6 +26,30 @@ use super::{
 #[derive(Debug, Default, Deserialize)]
 pub struct SyncQuery {
     slug: Option<String>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct SyncStatusResponse {
+    pub run: Option<SyncRun>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct SyncExecutionResponse {
+    pub outcome: String,
+    pub run: SyncRun,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct SyncErrorResponse {
+    pub error: String,
+    pub message: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(untagged)]
+pub enum SyncConflictResponse {
+    Execution(SyncExecutionResponse),
+    Error(SyncErrorResponse),
 }
 
 pub async fn run_global(
@@ -130,7 +155,7 @@ async fn status_for_slug(context: AppContext, slug: &str, headers: &HeaderMap) -
         Ok(runs) => {
             let run = current_or_last(&runs);
             if wants_json(headers) {
-                (StatusCode::OK, Json(json!({ "run": run }))).into_response()
+                (StatusCode::OK, Json(SyncStatusResponse { run })).into_response()
             } else {
                 let outcome = run.as_ref().map_or("none", |run| match run.status {
                     SyncRunStatus::Running => "running",
@@ -178,10 +203,10 @@ fn execution_response(execution: &SyncExecution, headers: &HeaderMap) -> Respons
     if wants_json(headers) {
         return (
             status,
-            Json(json!({
-                "outcome": execution.outcome_code(),
-                "run": execution.run(),
-            })),
+            Json(SyncExecutionResponse {
+                outcome: execution.outcome_code().to_owned(),
+                run: execution.run().clone(),
+            }),
         )
             .into_response();
     }
@@ -210,7 +235,14 @@ fn runtime_error_response(error: &SyncRuntimeError, headers: &HeaderMap) -> Resp
 
 fn simple_error(status: StatusCode, code: &str, message: &str, headers: &HeaderMap) -> Response {
     if wants_json(headers) {
-        return (status, Json(json!({ "error": code, "message": message }))).into_response();
+        return (
+            status,
+            Json(SyncErrorResponse {
+                error: code.to_owned(),
+                message: message.to_owned(),
+            }),
+        )
+            .into_response();
     }
     let class = if status.is_server_error() {
         "alert-error"

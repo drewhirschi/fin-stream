@@ -1,5 +1,5 @@
-import { Q as require_jsx_runtime, Z as QueryClientProvider, w as Button } from "./chunks/src-ZnV_ftAe.js";
-import { i as require_client, n as seedQueryClient, r as QueryClient, t as Layout } from "./chunks/layout-zpWnaYN9.js";
+import { Q as QueryClientProvider, et as require_jsx_runtime, w as Button } from "./chunks/src-DJBa3cvh.js";
+import { i as require_client, n as seedQueryClient, r as QueryClient, t as Layout } from "./chunks/layout-BJ3kUKXl.js";
 
 //#region ../app/not-found.tsx
 var import_client = require_client();
@@ -32,7 +32,7 @@ function NotFound() {
 }
 
 //#endregion
-//#region ../target/debug/build/trust-deeds-ea3f8debbfea7f14/out/nextrs_tsx/not-found.tsx
+//#region ../target/debug/build/trust-deeds-fa710ddc270ef531/out/nextrs_tsx/not-found.tsx
 const qc = new QueryClient({ defaultOptions: { queries: { staleTime: 3e4 } } });
 seedQueryClient(qc);
 const paramsEl = document.getElementById("__nx_params__");

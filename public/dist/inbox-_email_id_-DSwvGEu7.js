@@ -1,5 +1,5 @@
-import { C as CardTitle, O as dateTime, Q as require_jsx_runtime, S as CardHeader, T as Badge, a as Empty, b as CardContent, c as Page, g as createLucideIcon, n as useApi, o as ErrorState, s as Loading, w as Button, x as CardDescription, y as Card } from "./chunks/src-ZnV_ftAe.js";
-import { n as Mail, t as Paperclip } from "./chunks/paperclip-DsUvZWqJ.js";
+import { C as CardTitle, O as dateTime, S as CardHeader, T as Badge, a as Empty, b as CardContent, c as Page, et as require_jsx_runtime, g as createLucideIcon, n as useApi, o as ErrorState, s as Loading, w as Button, x as CardDescription, y as Card } from "./chunks/src-DJBa3cvh.js";
+import { n as Mail, t as Paperclip } from "./chunks/paperclip-Cnl4GiPK.js";
 
 //#region node_modules/lucide-react/dist/esm/icons/download.js
 /**

@@ -1,5 +1,5 @@
-import { O as dateTime, Q as require_jsx_runtime, T as Badge, a as Empty, b as CardContent, c as Page, n as useApi, o as ErrorState, s as Loading, w as Button, y as Card } from "./chunks/src-ZnV_ftAe.js";
-import { n as Mail, t as Paperclip } from "./chunks/paperclip-DsUvZWqJ.js";
+import { O as dateTime, T as Badge, a as Empty, b as CardContent, c as Page, et as require_jsx_runtime, n as useApi, o as ErrorState, s as Loading, w as Button, y as Card } from "./chunks/src-DJBa3cvh.js";
+import { n as Mail, t as Paperclip } from "./chunks/paperclip-Cnl4GiPK.js";
 
 //#region ../app/inbox/page.tsx
 var import_jsx_runtime = require_jsx_runtime();

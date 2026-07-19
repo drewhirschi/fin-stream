@@ -197,7 +197,7 @@ mod tests {
         cron_auth::CronAuthenticator,
         crypto::CredentialCipher,
         db::AppContext,
-        generated_registry,
+        generated_openapi, generated_registry,
         media::MediaService,
         operations::{OperationMode, OperationRepository},
         resend::ResendService,
@@ -420,6 +420,24 @@ mod tests {
             .expect("activity refresh route is generated from its route.rs");
         assert_eq!(refresh.methods.len(), 1);
         assert_eq!(refresh.methods[0].0, axum::http::Method::POST);
+    }
+
+    #[test]
+    fn generated_openapi_contains_typed_sync_status_and_run_contracts() {
+        let document = generated_openapi();
+        let status = document
+            .paths
+            .paths
+            .get("/integrations/{slug}/sync/status")
+            .expect("sync status is included in the typed client contract");
+        assert!(status.get.is_some());
+
+        let run = document
+            .paths
+            .paths
+            .get("/integrations/{slug}/sync/run")
+            .expect("sync run is included in the typed client contract");
+        assert!(run.post.is_some());
     }
 
     #[test]

@@ -8,3 +8,4 @@ export * from "./components/integration";
 export * from "./lib/api";
 export * from "./lib/utils";
 export * from "./types";
+export * from "./generated";

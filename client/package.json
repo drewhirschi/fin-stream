@@ -6,6 +6,9 @@
   "scripts": {
     "postinstall": "ln -sfn client/node_modules ../node_modules",
     "css": "tailwindcss -i ./src/styles.css -o ../public/style.css --minify",
+    "dump": "NEXTRS_SKIP_BUNDLE=1 cargo run --bin dump-openapi",
+    "orval": "orval --config ./orval.config.ts",
+    "gen": "npm run dump && npm run orval",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -23,6 +26,8 @@
     "@tailwindcss/cli": "^4.1.11",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "orval": "^7.3.0",
+    "prettier": "^3.9.5",
     "tailwindcss": "^4.1.11",
     "typescript": "^5.7.0"
   }

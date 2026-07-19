@@ -1,21 +1,21 @@
 {
   "entries": {
-    "__app_shell__": "/dist/__app_shell__-Cvj_Zqvg.js",
-    "canvas": "/dist/canvas-d2tCy19K.js",
-    "forecast": "/dist/forecast-DuvozfW3.js",
-    "inbox": "/dist/inbox-CxU_ZkkX.js",
-    "inbox-_email_id_": "/dist/inbox-_email_id_-Bzag-5Qo.js",
-    "index": "/dist/index-BujcrbSB.js",
-    "integrations": "/dist/integrations-BEV_MD2j.js",
-    "integrations-_slug_": "/dist/integrations-_slug_-U5O0f1Kq.js",
-    "integrations-_slug_-debug": "/dist/integrations-_slug_-debug-C4eBx8ad.js",
-    "integrations-_slug_-loans": "/dist/integrations-_slug_-loans-CkCZRfSY.js",
-    "integrations-_slug_-loans-_loan_account_": "/dist/integrations-_slug_-loans-_loan_account_-CraKuxXp.js",
-    "integrations-_slug_-payments": "/dist/integrations-_slug_-payments-C8HIEyD8.js",
-    "integrations-_slug_-sync": "/dist/integrations-_slug_-sync-CzQMvZBU.js",
-    "login": "/dist/login-DuJvxwlg.js",
-    "not-found": "/dist/not-found-BjPM4zVY.js",
-    "streams": "/dist/streams-COT3y1SV.js"
+    "__app_shell__": "/dist/__app_shell__-C8h0mkIM.js",
+    "canvas": "/dist/canvas-BpoEIFko.js",
+    "forecast": "/dist/forecast-RWb_wO05.js",
+    "inbox": "/dist/inbox-B1Ak7qxu.js",
+    "inbox-_email_id_": "/dist/inbox-_email_id_-DSwvGEu7.js",
+    "index": "/dist/index-D4vL7XwN.js",
+    "integrations": "/dist/integrations-DA2oQEpt.js",
+    "integrations-_slug_": "/dist/integrations-_slug_-CFVjLdR2.js",
+    "integrations-_slug_-debug": "/dist/integrations-_slug_-debug-B_yjZzua.js",
+    "integrations-_slug_-loans": "/dist/integrations-_slug_-loans-CNYW3LLe.js",
+    "integrations-_slug_-loans-_loan_account_": "/dist/integrations-_slug_-loans-_loan_account_-sc1Ndgv_.js",
+    "integrations-_slug_-payments": "/dist/integrations-_slug_-payments-DgSYwlsz.js",
+    "integrations-_slug_-sync": "/dist/integrations-_slug_-sync-C7NZLzkh.js",
+    "login": "/dist/login-BtwQrInp.js",
+    "not-found": "/dist/not-found-D57HBCTc.js",
+    "streams": "/dist/streams-BREnq7jM.js"
   },
   "stylesheet": "/dist/style-f091f8893ad8b943.css"
 }

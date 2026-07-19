@@ -15,6 +15,8 @@ and middleware stack.
 cp .env.example .env
 # Change ADMIN_PASSWORD in .env before using it.
 npm ci --prefix client --no-audit --no-fund
+# After changing a #[nextrs::api] contract:
+npm run --prefix client gen
 npm run --prefix client css
 cargo install cargo-nextrs-dev # once per machine
 cargo dev
