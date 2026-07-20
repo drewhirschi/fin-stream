@@ -10,6 +10,11 @@ use super::{
 
 const STALE_EXECUTION_MESSAGE: &str = "execution owner expired before recording completion";
 
+/// A scheduled slot may be attempted this many times before its failure is
+/// terminal until the next slot. Retries are paced by cron redelivery, so the
+/// effective backoff is the cron invocation interval.
+pub const MAX_SCHEDULED_ATTEMPTS: i64 = 3;
+
 /// Durable coordination for inline serverless work.
 ///
 /// Coordinator flow:
@@ -197,7 +202,8 @@ impl<'connection> OperationRepository<'connection> {
 
     /// Claim a deterministic cron slot. A later successful manual/scheduled
     /// run covers the slot, and the slot's unique index prevents redelivery
-    /// after either success or failure.
+    /// while a run is live or after success. Failed attempts are retryable on
+    /// later redeliveries until `MAX_SCHEDULED_ATTEMPTS` errors are recorded.
     pub async fn claim_scheduled(
         &self,
         connection_slug: &str,
@@ -228,11 +234,22 @@ impl<'connection> OperationRepository<'connection> {
                          AND status = 'success' \
                          AND started_at >= ?2 \
                    ) \
+                   AND ( \
+                       SELECT COUNT(*) FROM sync_log \
+                       WHERE connection_slug = ?1 \
+                         AND scheduled_for = ?2 \
+                         AND status = 'error' \
+                   ) < ?4 \
                  ON CONFLICT DO NOTHING \
                  RETURNING id, connection_slug, scheduled_for, started_at, finished_at, status, \
                            error_message, endpoints_hit, events_upserted, loans_upserted, \
                            snapshots_created",
-                params![connection_slug, scheduled_for, started_at],
+                params![
+                    connection_slug,
+                    scheduled_for,
+                    started_at,
+                    MAX_SCHEDULED_ATTEMPTS
+                ],
             )
             .await
             .context("claim scheduled sync run")?;
@@ -250,16 +267,23 @@ impl<'connection> OperationRepository<'connection> {
 
         require_scheduler_enabled_on(&transaction).await?;
         require_connection_on(&transaction, connection_slug).await?;
-        let outcome = if let Some(existing) =
-            run_for_scheduled_slot_on(&transaction, connection_slug, scheduled_for).await?
-        {
-            ClaimOutcome::AlreadyScheduled(existing)
+        // A live run must be classified before the slot's history: with
+        // retryable failures, an old error row for this slot can coexist with
+        // a concurrent run that is the actual reason the claim was refused.
+        let outcome = if let Some(current) = current_run_on(&transaction, connection_slug).await? {
+            if current.scheduled_for.as_deref() == Some(scheduled_for) {
+                ClaimOutcome::AlreadyScheduled(current)
+            } else {
+                ClaimOutcome::AlreadyRunning(current)
+            }
         } else if let Some(coverage) =
             successful_run_since_on(&transaction, connection_slug, scheduled_for).await?
         {
             ClaimOutcome::CoveredBySuccess(coverage)
-        } else if let Some(current) = current_run_on(&transaction, connection_slug).await? {
-            ClaimOutcome::AlreadyRunning(current)
+        } else if let Some(existing) =
+            run_for_scheduled_slot_on(&transaction, connection_slug, scheduled_for).await?
+        {
+            ClaimOutcome::AlreadyScheduled(existing)
         } else {
             return Err(OperationError::coordination(
                 "scheduled claim was not inserted, but no durable conflict remains",
@@ -272,14 +296,18 @@ impl<'connection> OperationRepository<'connection> {
         Ok(outcome)
     }
 
-    /// Mark invocations older than the caller's execution-ownership lease.
-    /// The cutoff is deliberately supplied by the caller; this repository
-    /// does not guess service or deployment deadlines.
+    /// Mark this connection's invocations older than the caller's
+    /// execution-ownership lease. The cutoff is deliberately supplied by the
+    /// caller; this repository does not guess service or deployment
+    /// deadlines. Scoping to one connection keeps a trigger for one
+    /// integration from reaping another integration's live run.
     pub async fn interrupt_stale(
         &self,
+        connection_slug: &str,
         finished_at: &str,
         cutoff_started_at: &str,
     ) -> OperationResult<Vec<SyncRun>> {
+        require_nonempty("connection slug", connection_slug)?;
         require_timestamp("stale-run finish timestamp", finished_at)?;
         require_timestamp("stale-run cutoff timestamp", cutoff_started_at)?;
         self.require_writes_enabled().await?;
@@ -289,14 +317,19 @@ impl<'connection> OperationRepository<'connection> {
             .query(
                 "UPDATE sync_log \
                  SET status = 'error', finished_at = ?1, error_message = ?2 \
-                 WHERE status = 'running' AND started_at < ?3 \
+                 WHERE status = 'running' AND started_at < ?3 AND connection_slug = ?4 \
                    AND EXISTS ( \
                        SELECT 1 FROM operation_control WHERE id = 1 AND mode = 'enabled' \
                    ) \
                  RETURNING id, connection_slug, scheduled_for, started_at, finished_at, status, \
                            error_message, endpoints_hit, events_upserted, loans_upserted, \
                            snapshots_created",
-                params![finished_at, STALE_EXECUTION_MESSAGE, cutoff_started_at],
+                params![
+                    finished_at,
+                    STALE_EXECUTION_MESSAGE,
+                    cutoff_started_at,
+                    connection_slug
+                ],
             )
             .await
             .context("interrupt stale sync runs")?;

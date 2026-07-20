@@ -223,6 +223,7 @@ async fn recent_runs(context: &AppContext, slug: &str) -> Result<Vec<SyncRun>, S
     {
         match operations
             .interrupt_stale(
+                slug,
                 &format_utc_millis(now),
                 &format_utc_millis(now - STALE_AFTER),
             )
@@ -470,7 +471,7 @@ mod tests {
         let mut run = failed_execution().run().clone();
         run.status = SyncRunStatus::Running;
         run.finished_at = None;
-        let now = OffsetDateTime::parse("2026-07-14T12:02:00Z", &Rfc3339).unwrap();
+        let now = OffsetDateTime::parse("2026-07-14T12:06:00Z", &Rfc3339).unwrap();
 
         assert!(!run_is_stale(&run, now));
         run.started_at = "2026-07-14T11:59:59.999Z".into();

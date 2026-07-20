@@ -595,7 +595,7 @@ async fn scheduled_redelivery_never_calls_the_provider_twice_for_one_slot() {
         .run_scheduled(slot)
         .await
         .unwrap();
-    let SyncExecution::AlreadyScheduled(existing) = redelivery else {
+    let SyncExecution::CoveredBySuccess(existing) = redelivery else {
         panic!("expected the durable slot record to deduplicate redelivery");
     };
     assert_eq!(existing.status, SyncRunStatus::Success);
@@ -603,7 +603,7 @@ async fn scheduled_redelivery_never_calls_the_provider_twice_for_one_slot() {
 }
 
 #[tokio::test]
-async fn failed_scheduled_slot_waits_for_the_next_slot_or_manual_retry() {
+async fn failed_scheduled_slot_retries_until_attempts_are_exhausted() {
     let (context, cipher, _) = test_context(true).await;
     OperationRepository::new(&context.connection().await.unwrap())
         .set_scheduler_enabled(true, "2026-07-14T11:59:30.000Z")
@@ -611,28 +611,34 @@ async fn failed_scheduled_slot_waits_for_the_next_slot_or_manual_retry() {
         .unwrap();
     let factory = FixtureFactory::new(FixtureMode::FailOverview);
     let clock = fixed_clock();
+    let attempts = usize::try_from(crate::operations::MAX_SCHEDULED_ATTEMPTS).unwrap();
 
-    let first = service(&context, &cipher, &factory, &clock)
+    // Every cron redelivery re-attempts the failed slot until the cap.
+    for _ in 0..attempts {
+        let outcome = service(&context, &cipher, &factory, &clock)
+            .run_scheduled("2026-07-14T12:00:00.000Z")
+            .await
+            .unwrap();
+        assert!(matches!(outcome, SyncExecution::Failed { .. }));
+    }
+    assert_eq!(factory.login_calls.load(Ordering::SeqCst), attempts);
+
+    let exhausted = service(&context, &cipher, &factory, &clock)
         .run_scheduled("2026-07-14T12:00:00.000Z")
         .await
         .unwrap();
-    assert!(matches!(first, SyncExecution::Failed { .. }));
-    let redelivery = service(&context, &cipher, &factory, &clock)
-        .run_scheduled("2026-07-14T12:00:00.000Z")
-        .await
-        .unwrap();
-    let SyncExecution::AlreadyScheduled(existing) = redelivery else {
-        panic!("expected a failed slot to remain durably deduplicated");
+    let SyncExecution::AlreadyScheduled(existing) = exhausted else {
+        panic!("expected an exhausted slot to remain durably deduplicated");
     };
     assert_eq!(existing.status, SyncRunStatus::Error);
-    assert_eq!(factory.login_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(factory.login_calls.load(Ordering::SeqCst), attempts);
 
     let next_slot = service(&context, &cipher, &factory, &clock)
         .run_scheduled("2026-07-14T18:00:00.000Z")
         .await
         .unwrap();
     assert!(matches!(next_slot, SyncExecution::Failed { .. }));
-    assert_eq!(factory.login_calls.load(Ordering::SeqCst), 2);
+    assert_eq!(factory.login_calls.load(Ordering::SeqCst), attempts + 1);
 }
 
 #[tokio::test]
@@ -691,11 +697,11 @@ async fn overlapping_claim_never_calls_provider() {
 }
 
 #[tokio::test]
-async fn a_claim_exactly_at_the_two_minute_boundary_is_still_live() {
+async fn a_claim_exactly_at_the_stale_lease_boundary_is_still_live() {
     let (context, cipher, _) = test_context(true).await;
     let connection = context.connection().await.unwrap();
     OperationRepository::new(&connection)
-        .claim_manual(TMO_CONNECTION_SLUG, "2026-07-14T11:58:00.000Z")
+        .claim_manual(TMO_CONNECTION_SLUG, "2026-07-14T11:54:00.000Z")
         .await
         .unwrap();
     let factory = FixtureFactory::new(FixtureMode::Success);

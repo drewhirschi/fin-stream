@@ -29,14 +29,17 @@ pub const TMO_CONNECTION_SLUG: &str = "tmo";
 
 /// Whole-run deadline, including provider capture and the durable terminal
 /// transition. Historical production TMO runs normally complete in 2-4
-/// seconds and have not exceeded 26 seconds.
-const EXECUTION_TIMEOUT: StdDuration = StdDuration::from_secs(60);
+/// seconds and have not exceeded 26 seconds; the deadline leaves room for
+/// portfolio growth while staying under the platform's 300-second
+/// `maxDuration` (vercel.json) with headroom for claim and cleanup work.
+const EXECUTION_TIMEOUT: StdDuration = StdDuration::from_secs(240);
 const TERMINAL_TRANSITION_TIMEOUT: StdDuration = StdDuration::from_secs(10);
 
-/// Crash-recovery lease. This remains comfortably above EXECUTION_TIMEOUT so
-/// a live owner gets the first chance to commit its timeout transition, while
-/// a hard-killed process cannot block retries for the old twenty-minute window.
-const STALE_AFTER: Duration = Duration::minutes(2);
+/// Crash-recovery lease. This remains comfortably above EXECUTION_TIMEOUT +
+/// TERMINAL_TRANSITION_TIMEOUT so a live owner always gets the first chance
+/// to commit its own timeout transition; only a hard-killed process is ever
+/// reaped by a later trigger.
+const STALE_AFTER: Duration = Duration::minutes(6);
 
 #[async_trait]
 pub trait TmoProviderSession: Send + Sync {
@@ -179,7 +182,7 @@ impl<'service> TmoSyncService<'service> {
         // run. Clear only executions older than the hard stale boundary before
         // attempting the unique-index-backed claim.
         operations
-            .interrupt_stale(&started_at, &stale_cutoff)
+            .interrupt_stale(TMO_CONNECTION_SLUG, &started_at, &stale_cutoff)
             .await
             .map_err(SyncRuntimeError::Operation)?;
         let outcome = match trigger {

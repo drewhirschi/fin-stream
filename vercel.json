@@ -5,9 +5,16 @@
   "buildCommand": "cd client && npm run build && cd .. && cargo build --release --locked --no-default-features --features remote-db --bin index",
   "functions": {
     "api/index.rs": {
-      "runtime": "vercel-rust@4.0.11"
+      "runtime": "vercel-rust@4.0.11",
+      "maxDuration": 300
     }
   },
+  "crons": [
+    {
+      "path": "/internal/cron",
+      "schedule": "5 * * * *"
+    }
+  ],
   "headers": [
     {
       "source": "/dist/(.*)",

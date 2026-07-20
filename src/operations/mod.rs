@@ -6,7 +6,7 @@ pub use error::{OperationError, OperationResult};
 pub use models::{
     ClaimOutcome, OperationControl, OperationMode, SyncCompletion, SyncRun, SyncRunStatus,
 };
-pub use repository::OperationRepository;
+pub use repository::{MAX_SCHEDULED_ATTEMPTS, OperationRepository};
 
 /// Canonical timestamp for durable operation-control transitions.
 pub fn utc_now_millis() -> String {
