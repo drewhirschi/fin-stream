@@ -11,8 +11,10 @@ use super::{
 const STALE_EXECUTION_MESSAGE: &str = "execution owner expired before recording completion";
 
 /// A scheduled slot may be attempted this many times before its failure is
-/// terminal until the next slot. Retries are paced by cron redelivery, so the
-/// effective backoff is the cron invocation interval.
+/// terminal until the next slot. Retries are paced by scheduled redelivery
+/// (the daily Hobby-plan cron backstop, or any additional deliveries to the
+/// cron endpoint); activity-driven manual runs recover failures between
+/// deliveries because a manual success covers the slot.
 pub const MAX_SCHEDULED_ATTEMPTS: i64 = 3;
 
 /// Durable coordination for inline serverless work.
