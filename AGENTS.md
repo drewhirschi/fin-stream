@@ -3,7 +3,7 @@
 Personal income and trust-deed portfolio workspace. The main application is the repository-root NextRS app.
 
 ## Stack
-- Rust 2024 + NextRS 0.3.8 + Axum 0.8 + Tokio
+- Rust 2024 + NextRS 0.4 (git-pinned for route telemetry) + Axum 0.8 + Tokio
 - React 19 TypeScript route components in `app/`
 - Shared React UI package in `client/`
 - libSQL/Turso persistence with checksum-verified migrations in `migrations/`
