@@ -49,7 +49,15 @@ uses the Turso environment configured in `.env`; local SQLite is an explicit
 ## Deployment
 - The repository root is the Vercel project root.
 - `vercel.json` builds the React client and the remote-libSQL Rust function.
+- **Always deploy prebuilt** — compile locally, never in Vercel's cloud:
+  `vercel build --prod && vercel deploy --prebuilt --prod`. The Rust release
+  build is minutes locally and impractical on Vercel's build machines; the
+  prebuilt upload itself takes ~15 seconds.
 - Production uses Turso and private S3-compatible object storage.
+- Production Turso is verification-only at cold start: apply new `migrations/`
+  files out-of-band via `turso db shell trust-deeds-production` and insert the
+  matching `_schema_migrations` row (blake3 checksum of the file) before
+  deploying code that expects them.
 - The historical PostgreSQL/Coolify application is not part of the main build; its cutover procedure is retained in `CUTOVER.md`.
 
 ## gstack
