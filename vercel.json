@@ -35,7 +35,7 @@
       ]
     },
     {
-      "source": "/timing-probe.txt",
+      "source": "/static/timing-probe.txt",
       "headers": [
         {
           "key": "Server-Timing",

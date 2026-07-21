@@ -1,4 +1,9 @@
-use std::{fmt, sync::Arc};
+use std::{
+    collections::HashMap,
+    fmt,
+    sync::{Arc, Mutex},
+    time::{Duration as StdDuration, Instant},
+};
 
 use anyhow::Context;
 #[cfg(feature = "local-db")]
@@ -59,6 +64,7 @@ const MIGRATIONS: &[Migration] = &[
 #[derive(Clone)]
 pub struct AppContext {
     database: Arc<Database>,
+    active_user_cache: Arc<Mutex<HashMap<i64, Instant>>>,
     /// libSQL's plain `:memory:` database is isolated per connection. The
     /// public test constructor retains one handle so tests exercise the same
     /// ephemeral database; configured file/remote runtimes always leave this
@@ -158,6 +164,7 @@ impl AppContext {
         };
         let context = Self {
             database: Arc::new(database),
+            active_user_cache: Arc::default(),
             test_connection,
         };
         context.migrate().await?;
@@ -168,6 +175,7 @@ impl AppContext {
     async fn from_database_checked(database: Database) -> anyhow::Result<Self> {
         let context = Self {
             database: Arc::new(database),
+            active_user_cache: Arc::default(),
             test_connection: None,
         };
         context.ensure_schema_current().await?;
@@ -305,6 +313,16 @@ impl AppContext {
     }
 
     pub async fn user_is_active(&self, user_id: i64) -> anyhow::Result<bool> {
+        const ACTIVE_USER_CACHE_TTL: StdDuration = StdDuration::from_secs(30);
+        if self
+            .active_user_cache
+            .lock()
+            .ok()
+            .and_then(|cache| cache.get(&user_id).copied())
+            .is_some_and(|cached_at| cached_at.elapsed() <= ACTIVE_USER_CACHE_TTL)
+        {
+            return Ok(true);
+        }
         let connection = self.connection().await?;
         let mut rows = connection
             .query(
@@ -313,7 +331,15 @@ impl AppContext {
             )
             .await
             .context("query active user")?;
-        Ok(rows.next().await.context("read active user")?.is_some())
+        let active = rows.next().await.context("read active user")?.is_some();
+        if active {
+            if let Ok(mut cache) = self.active_user_cache.lock() {
+                cache.insert(user_id, Instant::now());
+            }
+        } else if let Ok(mut cache) = self.active_user_cache.lock() {
+            cache.remove(&user_id);
+        }
+        Ok(active)
     }
 }
 

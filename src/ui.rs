@@ -72,22 +72,37 @@ pub(crate) struct EmailData {
     pub loans: Vec<TmoLoanListItem>,
 }
 
-pub(crate) async fn finance(context: &AppContext) -> anyhow::Result<FinanceData> {
-    let connection = context.connection().await?;
+pub(crate) async fn finance(
+    context: &AppContext,
+    timing: &nextrs::Timing,
+) -> anyhow::Result<FinanceData> {
+    let connection = timing.span("db-connect", context.connection()).await?;
     let repository = FinanceRepository::new(&connection);
     Ok(FinanceData {
-        accounts: repository.list_accounts().await?,
-        streams: repository.list_streams().await?,
-        views: repository.list_view_editors().await?,
-        canvas_streams: repository.list_canvas_streams().await?,
+        accounts: timing
+            .span("db-accounts", repository.list_accounts())
+            .await?,
+        streams: timing.span("db-streams", repository.list_streams()).await?,
+        views: timing
+            .span("db-views", repository.list_view_editors())
+            .await?,
+        canvas_streams: timing
+            .span("db-canvas", repository.list_canvas_streams())
+            .await?,
     })
 }
 
-pub(crate) async fn integrations(context: &AppContext) -> anyhow::Result<IntegrationsData> {
-    let connection = context.connection().await?;
+pub(crate) async fn integrations(
+    context: &AppContext,
+    timing: &nextrs::Timing,
+) -> anyhow::Result<IntegrationsData> {
+    let connection = timing.span("db-connect", context.connection()).await?;
     Ok(IntegrationsData {
-        connections: IntegrationRepository::new(&connection)
-            .list_connection_views()
+        connections: timing
+            .span(
+                "db-integrations",
+                IntegrationRepository::new(&connection).list_connection_views(),
+            )
             .await?,
     })
 }
