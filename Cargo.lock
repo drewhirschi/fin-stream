@@ -1706,8 +1706,9 @@ dependencies = [
 
 [[package]]
 name = "nextrs"
-version = "0.4.2"
-source = "git+https://github.com/drewhirschi/nextrs?rev=ae27952#ae27952ee6da2c7b784d960cc7f668b55d88e100"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "28eae9c697eae253fcac94bfb0bf3fe1cb210ed94473ceeb376a4d5a1744a824"
 dependencies = [
  "askama",
  "async-stream",
@@ -1756,8 +1757,9 @@ dependencies = [
 
 [[package]]
 name = "nextrs-macros"
-version = "0.1.5"
-source = "git+https://github.com/drewhirschi/nextrs?rev=ae27952#ae27952ee6da2c7b784d960cc7f668b55d88e100"
+version = "0.1.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "83e42c62b937b296d81adb59606a8f604ba46b5e784e8fdd3081d90544134369"
 dependencies = [
  "proc-macro2",
  "quote",
