@@ -144,7 +144,7 @@ async fn status_for_slug(context: AppContext, slug: &str, headers: &HeaderMap) -
             headers,
         );
     }
-    match recent_runs(&context, slug).await {
+    match recent_runs(&context, slug, &nextrs::Timing::noop()).await {
         Ok(runs) => {
             let run = current_or_last(&runs);
             if wants_json(headers) {
@@ -165,6 +165,7 @@ async fn status_for_slug(context: AppContext, slug: &str, headers: &HeaderMap) -
 pub async fn status_json(
     context: &AppContext,
     slug: &str,
+    timing: &nextrs::Timing,
 ) -> Result<SyncStatusResponse, (StatusCode, Json<SyncErrorResponse>)> {
     if slug != TMO_CONNECTION_SLUG {
         return Err(json_error(
@@ -174,7 +175,7 @@ pub async fn status_json(
         ));
     }
 
-    recent_runs(context, slug)
+    recent_runs(context, slug, timing)
         .await
         .map(|runs| SyncStatusResponse {
             run: current_or_last(&runs),
@@ -197,7 +198,7 @@ async fn logs_for_slug(context: AppContext, slug: &str, headers: &HeaderMap) -> 
             headers,
         );
     }
-    match recent_runs(&context, slug).await {
+    match recent_runs(&context, slug, &nextrs::Timing::noop()).await {
         Ok(runs) if wants_json(headers) => {
             (StatusCode::OK, Json(json!({ "runs": runs }))).into_response()
         }
@@ -206,14 +207,18 @@ async fn logs_for_slug(context: AppContext, slug: &str, headers: &HeaderMap) -> 
     }
 }
 
-async fn recent_runs(context: &AppContext, slug: &str) -> Result<Vec<SyncRun>, SyncRuntimeError> {
-    let connection = context
-        .connection()
+async fn recent_runs(
+    context: &AppContext,
+    slug: &str,
+    timing: &nextrs::Timing,
+) -> Result<Vec<SyncRun>, SyncRuntimeError> {
+    let connection = timing
+        .span("db-connect", context.connection())
         .await
         .map_err(SyncRuntimeError::Storage)?;
     let operations = OperationRepository::new(&connection);
-    let mut runs = operations
-        .list_recent(slug, 20)
+    let mut runs = timing
+        .span("db-list-runs", operations.list_recent(slug, 20))
         .await
         .map_err(SyncRuntimeError::Operation)?;
     let now = OffsetDateTime::now_utc();
@@ -221,19 +226,22 @@ async fn recent_runs(context: &AppContext, slug: &str) -> Result<Vec<SyncRun>, S
         .iter()
         .any(|run| run.status == SyncRunStatus::Running && run_is_stale(run, now))
     {
-        match operations
-            .interrupt_stale(
-                slug,
-                &format_utc_millis(now),
-                &format_utc_millis(now - STALE_AFTER),
+        match timing
+            .span(
+                "db-repair-stale",
+                operations.interrupt_stale(
+                    slug,
+                    &format_utc_millis(now),
+                    &format_utc_millis(now - STALE_AFTER),
+                ),
             )
             .await
         {
             Ok(_) | Err(crate::operations::OperationError::ReadOnly) => {}
             Err(error) => return Err(SyncRuntimeError::Operation(error)),
         }
-        runs = operations
-            .list_recent(slug, 20)
+        runs = timing
+            .span("db-list-runs", operations.list_recent(slug, 20))
             .await
             .map_err(SyncRuntimeError::Operation)?;
     }
@@ -509,7 +517,9 @@ mod tests {
             crate::operations::ClaimOutcome::Claimed(_)
         ));
 
-        let runs = recent_runs(&context, TMO_CONNECTION_SLUG).await.unwrap();
+        let runs = recent_runs(&context, TMO_CONNECTION_SLUG, &nextrs::Timing::noop())
+            .await
+            .unwrap();
         assert_eq!(runs[0].status, SyncRunStatus::Error);
         assert_eq!(
             runs[0].error_message.as_deref(),

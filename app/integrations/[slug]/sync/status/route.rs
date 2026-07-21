@@ -17,11 +17,12 @@ use crate::{db::AppContext, sync_runtime::http};
     ),
 )]
 pub async fn get(
+    timing: nextrs::Timing,
     Extension(context): Extension<AppContext>,
     Path(slug): Path<String>,
 ) -> Result<
     Json<http::SyncStatusResponse>,
     (StatusCode, Json<http::SyncErrorResponse>),
 > {
-    http::status_json(&context, &slug).await.map(Json)
+    http::status_json(&context, &slug, &timing).await.map(Json)
 }

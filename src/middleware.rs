@@ -8,7 +8,10 @@ use axum::{
     response::{IntoResponse, Redirect, Response},
 };
 use serde_json::json;
-use std::sync::Arc;
+use std::{
+    sync::{Arc, Mutex},
+    time::{Duration, Instant},
+};
 use tower_sessions::Session;
 
 use crate::{
@@ -22,6 +25,54 @@ const CONTENT_SECURITY_POLICY_START: &str =
 const CONTENT_SECURITY_POLICY_MEDIA_SEPARATOR: &str =
     "; font-src 'self'; frame-ancestors 'none'; img-src 'self' data:";
 const CONTENT_SECURITY_POLICY_END: &str = "; object-src 'none'; form-action 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'";
+
+#[derive(Clone, Default)]
+struct AppTiming(Arc<Mutex<Vec<(&'static str, Duration)>>>);
+
+impl AppTiming {
+    fn mark(&self, name: &'static str, duration: Duration) {
+        if let Ok(mut segments) = self.0.lock() {
+            segments.push((name, duration));
+        }
+    }
+
+    fn value(&self) -> String {
+        self.0
+            .lock()
+            .map(|segments| {
+                segments
+                    .iter()
+                    .map(|(name, duration)| {
+                        format!("{name};dur={:.1}", duration.as_secs_f64() * 1_000.0)
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            })
+            .unwrap_or_default()
+    }
+}
+
+pub async fn record_app_timing(mut request: Request, next: Next) -> Response {
+    let timing = AppTiming::default();
+    request.extensions_mut().insert(timing.clone());
+    let mut response = next.run(request).await;
+    let app_value = timing.value();
+    if app_value.is_empty() {
+        return response;
+    }
+    let combined = response
+        .headers()
+        .get("server-timing")
+        .and_then(|value| value.to_str().ok())
+        .map_or_else(
+            || app_value.clone(),
+            |value| format!("{value}, {app_value}"),
+        );
+    if let Ok(value) = HeaderValue::from_str(&combined) {
+        response.headers_mut().insert("server-timing", value);
+    }
+    response
+}
 
 #[derive(Clone, Debug)]
 pub(crate) struct ResponsePerimeterConfig {
@@ -116,6 +167,7 @@ pub async fn require_auth(
     request: Request,
     next: Next,
 ) -> Response {
+    let app_timing = request.extensions().get::<AppTiming>().cloned();
     let path = request.uri().path();
     if crate::resend::http::is_webhook_path(path) {
         if request
@@ -151,7 +203,12 @@ pub async fn require_auth(
         return next.run(request).await;
     }
 
-    let user_id = match session.get::<i64>(SESSION_USER_ID_KEY).await {
+    let started = Instant::now();
+    let user_id_result = session.get::<i64>(SESSION_USER_ID_KEY).await;
+    if let Some(timing) = &app_timing {
+        timing.mark("session", started.elapsed());
+    }
+    let user_id = match user_id_result {
         Ok(user_id) => user_id,
         Err(error) => {
             tracing::error!(%error, "failed to load session");
@@ -159,7 +216,12 @@ pub async fn require_auth(
         }
     };
     if let Some(user_id) = user_id {
-        match context.user_is_active(user_id).await {
+        let started = Instant::now();
+        let active_result = context.user_is_active(user_id).await;
+        if let Some(timing) = &app_timing {
+            timing.mark("auth-db", started.elapsed());
+        }
+        match active_result {
             Ok(true) => {
                 if cfg!(not(test)) && triggers_activity_refresh(&request) {
                     crate::activity_refresh::schedule_tmo_if_stale(&wait, context.clone(), cipher);

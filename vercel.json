@@ -33,9 +33,22 @@
           "value": "public, max-age=3600, must-revalidate"
         }
       ]
+    },
+    {
+      "source": "/timing-probe",
+      "headers": [
+        {
+          "key": "Server-Timing",
+          "value": "edge-probe;dur=1.0"
+        }
+      ]
     }
   ],
   "rewrites": [
+    {
+      "source": "/timing-probe",
+      "destination": "/ready"
+    },
     {
       "source": "/favicon.ico",
       "destination": "/static/favicon.ico"

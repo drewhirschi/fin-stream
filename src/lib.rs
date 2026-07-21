@@ -173,6 +173,9 @@ where
             perimeter_config,
             middleware::response_perimeter,
         ))
+        // Outermost application timing captures session/auth work that runs
+        // before NextRS's generated route middleware.
+        .layer(from_fn(middleware::record_app_timing))
 }
 
 #[cfg(all(feature = "remote-db", feature = "local-db"))]

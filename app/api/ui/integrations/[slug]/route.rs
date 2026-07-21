@@ -5,6 +5,6 @@ use crate::{db::AppContext, ui};
 #[derive(Deserialize)]
 pub struct Params { section: Option<String> }
 
-pub async fn get(Extension(context): Extension<AppContext>, Path(slug): Path<String>, Query(params): Query<Params>) -> Response {
-    ui::optional_response(ui::integration(&context, &slug, params.section.as_deref().unwrap_or("overview")).await)
+pub async fn get(timing: nextrs::Timing, Extension(context): Extension<AppContext>, Path(slug): Path<String>, Query(params): Query<Params>) -> Response {
+    ui::optional_response(timing.span("db", ui::integration(&context, &slug, params.section.as_deref().unwrap_or("overview"))).await)
 }
