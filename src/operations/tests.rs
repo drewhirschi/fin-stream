@@ -285,29 +285,31 @@ async fn scheduled_claims_dedupe_and_manual_success_covers_a_slot() {
     assert!(matches!(coverage, ClaimOutcome::CoveredBySuccess(run) if run.id == manual.id));
 
     let slot = "2026-07-15T00:00:00.000Z";
-    let ClaimOutcome::Claimed(scheduled) = repository
-        .claim_scheduled("tmo", slot, "2026-07-15T00:01:00.000Z")
-        .await
-        .unwrap()
-    else {
-        panic!("scheduled run was not claimed");
-    };
-    repository
-        .complete_error(
-            scheduled.id,
-            "2026-07-15T00:02:00.000Z",
-            "provider unavailable",
-        )
-        .await
-        .unwrap();
-    let duplicate = repository
-        .claim_scheduled("tmo", slot, "2026-07-15T00:03:00.000Z")
+    let mut last_error_id = 0;
+    for attempt in 0..super::MAX_SCHEDULED_ATTEMPTS {
+        let started_at = format!("2026-07-15T00:0{}:00.000Z", attempt + 1);
+        let finished_at = format!("2026-07-15T00:0{}:30.000Z", attempt + 1);
+        let ClaimOutcome::Claimed(scheduled) = repository
+            .claim_scheduled("tmo", slot, &started_at)
+            .await
+            .unwrap()
+        else {
+            panic!("scheduled attempt {attempt} was not claimed");
+        };
+        repository
+            .complete_error(scheduled.id, &finished_at, "provider unavailable")
+            .await
+            .unwrap();
+        last_error_id = scheduled.id;
+    }
+    let exhausted = repository
+        .claim_scheduled("tmo", slot, "2026-07-15T00:09:00.000Z")
         .await
         .unwrap();
     assert!(matches!(
-        duplicate,
+        exhausted,
         ClaimOutcome::AlreadyScheduled(run)
-            if run.id == scheduled.id && run.status == SyncRunStatus::Error
+            if run.id == last_error_id && run.status == SyncRunStatus::Error
     ));
 }
 
@@ -327,7 +329,7 @@ async fn stale_transition_uses_caller_cutoff_and_keeps_newer_run() {
         panic!("old run was not claimed");
     };
     let ClaimOutcome::Claimed(newer) = repository
-        .claim_manual("monarch", "2026-07-14T18:10:00.000Z")
+        .claim_manual("monarch", "2026-07-14T18:00:00.000Z")
         .await
         .unwrap()
     else {
@@ -335,7 +337,11 @@ async fn stale_transition_uses_caller_cutoff_and_keeps_newer_run() {
     };
 
     let interrupted = repository
-        .interrupt_stale("2026-07-14T18:20:00.000Z", "2026-07-14T18:05:00.000Z")
+        .interrupt_stale(
+            "tmo",
+            "2026-07-14T18:20:00.000Z",
+            "2026-07-14T18:05:00.000Z",
+        )
         .await
         .unwrap();
     assert_eq!(interrupted.len(), 1);
@@ -345,6 +351,8 @@ async fn stale_transition_uses_caller_cutoff_and_keeps_newer_run() {
         interrupted[0].error_message.as_deref(),
         Some("execution owner expired before recording completion")
     );
+    // The other connection's run is equally old, but a slug-scoped interrupt
+    // never reaps it.
     assert_eq!(
         repository.current_run("monarch").await.unwrap().unwrap().id,
         newer.id

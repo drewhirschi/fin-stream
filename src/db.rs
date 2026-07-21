@@ -14,6 +14,7 @@ const INTEGRATIONS_OPERATIONS_MIGRATION: &str =
 const WORKSPACES_INBOX_MIGRATION: &str = include_str!("../migrations/0004_workspaces_inbox.sql");
 const RESEND_INBOUND_LEASES_MIGRATION: &str =
     include_str!("../migrations/0005_resend_inbound_leases.sql");
+const SYNC_RETRY_MIGRATION: &str = include_str!("../migrations/0006_sync_retry.sql");
 
 #[derive(Clone, Copy)]
 struct Migration {
@@ -47,6 +48,11 @@ const MIGRATIONS: &[Migration] = &[
         version: 5,
         name: "resend_inbound_leases",
         sql: RESEND_INBOUND_LEASES_MIGRATION,
+    },
+    Migration {
+        version: 6,
+        name: "sync_retry",
+        sql: SYNC_RETRY_MIGRATION,
     },
 ];
 

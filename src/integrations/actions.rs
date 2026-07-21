@@ -385,7 +385,7 @@ impl<'service> MonarchBalanceService<'service> {
             .map_err(MonarchSyncError::Storage)?;
         let operations = OperationRepository::new(&claim_connection);
         operations
-            .interrupt_stale(&started_at, &stale_cutoff)
+            .interrupt_stale(MONARCH_CONNECTION_SLUG, &started_at, &stale_cutoff)
             .await
             .map_err(MonarchSyncError::from_operation)?;
         let claim = operations
