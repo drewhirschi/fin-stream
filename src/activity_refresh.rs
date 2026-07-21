@@ -43,6 +43,11 @@ pub(crate) fn schedule_tmo_if_stale(
     context: AppContext,
     cipher: Arc<CredentialCipher>,
 ) {
+    if std::env::var("TRUST_DEEDS_ACTIVITY_REFRESH")
+        .is_ok_and(|value| matches!(value.as_str(), "0" | "false" | "off"))
+    {
+        return;
+    }
     wait.wait_until(async move {
         refresh_tmo_if_stale(&context, &cipher, OffsetDateTime::now_utc()).await;
     });
@@ -208,7 +213,10 @@ async fn due_integrations(
     let connection = context.connection().await?;
     let mut rows = connection
         .query(
-            "SELECT slug, last_synced_at FROM intg_integration_connection \
+            "SELECT slug, last_synced_at, \
+                    (SELECT MAX(started_at) FROM sync_log \
+                     WHERE connection_slug = intg_integration_connection.slug) \
+             FROM intg_integration_connection \
              WHERE (slug = 'tmo' AND provider = 'mortgage_office') \
                 OR (slug = 'monarch' AND provider = 'monarch') \
              ORDER BY slug",
@@ -219,7 +227,8 @@ async fn due_integrations(
     while let Some(row) = rows.next().await? {
         let slug = row.get::<String>(0)?;
         let last_synced_at = row.get::<Option<String>>(1)?;
-        if integration_is_due(last_synced_at.as_deref(), now) {
+        let last_attempted_at = row.get::<Option<String>>(2)?;
+        if integration_is_due(last_synced_at.as_deref(), last_attempted_at.as_deref(), now) {
             match slug.as_str() {
                 MONARCH_CONNECTION_SLUG => due.push(MONARCH_CONNECTION_SLUG),
                 TMO_CONNECTION_SLUG => due.push(TMO_CONNECTION_SLUG),
@@ -234,7 +243,9 @@ async fn tmo_is_due(context: &AppContext, now: OffsetDateTime) -> anyhow::Result
     let connection = context.connection().await?;
     let mut rows = connection
         .query(
-            "SELECT last_synced_at FROM intg_integration_connection \
+            "SELECT last_synced_at, \
+                    (SELECT MAX(started_at) FROM sync_log WHERE connection_slug = 'tmo') \
+             FROM intg_integration_connection \
              WHERE slug = 'tmo' AND provider = 'mortgage_office'",
             (),
         )
@@ -243,17 +254,24 @@ async fn tmo_is_due(context: &AppContext, now: OffsetDateTime) -> anyhow::Result
         return Ok(false);
     };
     let last_synced_at = row.get::<Option<String>>(0)?;
-    Ok(integration_is_due(last_synced_at.as_deref(), now))
+    let last_attempted_at = row.get::<Option<String>>(1)?;
+    Ok(integration_is_due(
+        last_synced_at.as_deref(),
+        last_attempted_at.as_deref(),
+        now,
+    ))
 }
 
-fn integration_is_due(last_synced_at: Option<&str>, now: OffsetDateTime) -> bool {
-    let Some(last_synced_at) = last_synced_at else {
-        return true;
-    };
-    let Ok(last_synced_at) = OffsetDateTime::parse(last_synced_at, &Rfc3339) else {
-        return true;
-    };
-    last_synced_at <= now - REFRESH_AFTER
+fn integration_is_due(
+    last_synced_at: Option<&str>,
+    last_attempted_at: Option<&str>,
+    now: OffsetDateTime,
+) -> bool {
+    [last_synced_at, last_attempted_at]
+        .into_iter()
+        .flatten()
+        .filter_map(|value| OffsetDateTime::parse(value, &Rfc3339).ok())
+        .all(|value| value <= now - REFRESH_AFTER)
 }
 
 #[cfg(test)]
@@ -265,11 +283,20 @@ mod tests {
     }
 
     #[test]
-    fn activity_refresh_is_due_after_one_hour_or_on_invalid_history() {
+    fn activity_refresh_backs_off_from_successes_and_failed_attempts() {
         let now = instant("2026-07-14T20:00:00Z");
-        assert!(!integration_is_due(Some("2026-07-14T19:00:01Z"), now));
-        assert!(integration_is_due(Some("2026-07-14T19:00:00Z"), now));
-        assert!(integration_is_due(None, now));
-        assert!(integration_is_due(Some("not-a-timestamp"), now));
+        assert!(!integration_is_due(Some("2026-07-14T19:00:01Z"), None, now));
+        assert!(!integration_is_due(
+            Some("2026-07-14T18:00:00Z"),
+            Some("2026-07-14T19:30:00Z"),
+            now
+        ));
+        assert!(integration_is_due(
+            Some("2026-07-14T19:00:00Z"),
+            Some("2026-07-14T18:30:00Z"),
+            now
+        ));
+        assert!(integration_is_due(None, None, now));
+        assert!(integration_is_due(Some("not-a-timestamp"), None, now));
     }
 }
