@@ -31,7 +31,8 @@ function SyncView({ data, slug }: { data: IntegrationData; slug: string }) {
   const status = useGetIntegrationSyncStatus(slug, {
     fetch: { credentials: "same-origin", headers: { Accept: "application/json" } },
     query: {
-      refetchInterval: 10_000,
+      refetchInterval: query =>
+        query.state.data?.status === 200 && query.state.data.data.run?.status === "running" ? 10_000 : false,
     },
   });
   const runSync = useRunIntegrationSync({

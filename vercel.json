@@ -35,7 +35,7 @@
       ]
     },
     {
-      "source": "/timing-probe",
+      "source": "/timing-probe.txt",
       "headers": [
         {
           "key": "Server-Timing",
@@ -45,10 +45,6 @@
     }
   ],
   "rewrites": [
-    {
-      "source": "/timing-probe",
-      "destination": "/ready"
-    },
     {
       "source": "/favicon.ico",
       "destination": "/static/favicon.ico"

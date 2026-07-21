@@ -1,4 +1,9 @@
-use std::fmt;
+use std::{
+    collections::HashMap,
+    fmt,
+    sync::{Arc, Mutex},
+    time::{Duration, Instant},
+};
 
 use async_trait::async_trait;
 use libsql::params;
@@ -14,11 +19,54 @@ use crate::db::AppContext;
 #[derive(Clone)]
 pub struct LibsqlSessionStore {
     context: AppContext,
+    cache: Arc<Mutex<HashMap<String, CachedRecord>>>,
+}
+
+const SESSION_CACHE_TTL: Duration = Duration::from_secs(30);
+
+#[derive(Clone)]
+struct CachedRecord {
+    record: Record,
+    cached_at: Instant,
 }
 
 impl LibsqlSessionStore {
     pub fn new(context: AppContext) -> Self {
-        Self { context }
+        Self {
+            context,
+            cache: Arc::default(),
+        }
+    }
+
+    fn cached(&self, session_id: &Id) -> Option<Record> {
+        let key = session_id.to_string();
+        let mut cache = self.cache.lock().ok()?;
+        let cached = cache.get(&key)?;
+        if cached.cached_at.elapsed() <= SESSION_CACHE_TTL
+            && cached.record.expiry_date > OffsetDateTime::now_utc()
+        {
+            return Some(cached.record.clone());
+        }
+        cache.remove(&key);
+        None
+    }
+
+    fn cache(&self, record: &Record) {
+        if let Ok(mut cache) = self.cache.lock() {
+            cache.insert(
+                record.id.to_string(),
+                CachedRecord {
+                    record: record.clone(),
+                    cached_at: Instant::now(),
+                },
+            );
+        }
+    }
+
+    fn evict(&self, session_id: &Id) {
+        if let Ok(mut cache) = self.cache.lock() {
+            cache.remove(&session_id.to_string());
+        }
     }
 }
 
@@ -49,6 +97,7 @@ impl SessionStore for LibsqlSessionStore {
                 .await
                 .map_err(backend)?;
             if changed == 1 {
+                self.cache(record);
                 return Ok(());
             }
             record.id = Id::default();
@@ -73,14 +122,19 @@ impl SessionStore for LibsqlSessionStore {
             .await
             .map_err(backend)?;
         if changed != 1 {
+            self.evict(&record.id);
             return Err(session_store::Error::Backend(
                 "session disappeared before it could be saved".into(),
             ));
         }
+        self.cache(record);
         Ok(())
     }
 
     async fn load(&self, session_id: &Id) -> session_store::Result<Option<Record>> {
+        if let Some(record) = self.cached(session_id) {
+            return Ok(Some(record));
+        }
         let connection = self.context.connection().await.map_err(backend)?;
         let mut rows = connection
             .query(
@@ -108,6 +162,7 @@ impl SessionStore for LibsqlSessionStore {
         if record.expiry_date <= OffsetDateTime::now_utc() {
             return Ok(None);
         }
+        self.cache(&record);
         Ok(Some(record))
     }
 
@@ -122,6 +177,7 @@ impl SessionStore for LibsqlSessionStore {
             )
             .await
             .map_err(backend)?;
+        self.evict(session_id);
         Ok(())
     }
 }
