@@ -223,6 +223,10 @@ pub async fn require_auth(
         }
         match active_result {
             Ok(true) => {
+                // Requires the vendored `vercel_runtime` end-message drain
+                // (vendor/, upstream PR vercel/vercel#17350): stock 2.4.0
+                // suspends the instance after the response and this background
+                // work starves until its deadline or ownership lease expires.
                 if cfg!(not(test)) && triggers_activity_refresh(&request) {
                     crate::activity_refresh::schedule_tmo_if_stale(&wait, context.clone(), cipher);
                 }
@@ -321,6 +325,9 @@ fn is_public(path: &str) -> bool {
         || path == "/health"
         || path == "/healthz"
         || path == "/ready"
+        // TEMPORARY (2026-08-01): log-only wait_until diagnostic probe;
+        // remove together with app/internal/waituntil-probe-20260801/.
+        || path == "/internal/waituntil-probe-20260801"
         || is_static(path)
 }
 

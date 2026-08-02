@@ -76,3 +76,10 @@ zeroize = "1"
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
+
+# TEMPORARY (2026-08-01): local fix for wait_until starvation — the upstream
+# runtime sends the per-request `end` IPC message before background futures
+# settle, so Fluid suspends the instance and waitUntil work starves. Our copy
+# drains each request's futures first. Remove once the upstream PR lands.
+[patch.crates-io]
+vercel_runtime = { path = "vendor/vercel_runtime" }

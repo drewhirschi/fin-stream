@@ -1,4 +1,8 @@
-use std::{str::FromStr, sync::Arc};
+use std::{
+    str::FromStr,
+    sync::{Arc, Mutex},
+    time::{Duration as StdDuration, Instant},
+};
 
 use axum::{
     Json,
@@ -35,9 +39,33 @@ struct RefreshResult {
     status: u16,
 }
 
+/// In-memory throttle for the background due-check. Correctness does not
+/// depend on it — the one-hour backoff and the execution claim both live in
+/// the database — it only keeps every page navigation from issuing a
+/// redundant background query (which, under the vendored runtime's
+/// end-message drain, would also extend each invocation's lifetime).
+/// Per-process, so a cold instance re-checks once and warm Fluid instances
+/// check at most once per window.
+const DUE_CHECK_THROTTLE: StdDuration = StdDuration::from_secs(5 * 60);
+static LAST_DUE_CHECK: Mutex<Option<Instant>> = Mutex::new(None);
+
+/// Records a due-check attempt, returning false while the previous one is
+/// within the throttle window.
+fn claim_due_check(last: &Mutex<Option<Instant>>, throttle: StdDuration) -> bool {
+    let Ok(mut guard) = last.lock() else {
+        return true;
+    };
+    if guard.is_some_and(|checked_at| checked_at.elapsed() < throttle) {
+        return false;
+    }
+    *guard = Some(Instant::now());
+    true
+}
+
 /// Register a best-effort TMO refresh without extending the authenticated
-/// page response. The future begins immediately; NextRS keeps it alive through
-/// Vercel invocation shutdown and falls back to `tokio::spawn` locally.
+/// page response. The future begins immediately; on Vercel the vendored
+/// runtime keeps the invocation open until it settles (see vendor/ and
+/// vercel/vercel#17350), and locally NextRS falls back to `tokio::spawn`.
 pub(crate) fn schedule_tmo_if_stale(
     wait: &nextrs::WaitUntil,
     context: AppContext,
@@ -46,6 +74,9 @@ pub(crate) fn schedule_tmo_if_stale(
     if std::env::var("TRUST_DEEDS_ACTIVITY_REFRESH")
         .is_ok_and(|value| matches!(value.as_str(), "0" | "false" | "off"))
     {
+        return;
+    }
+    if !claim_due_check(&LAST_DUE_CHECK, DUE_CHECK_THROTTLE) {
         return;
     }
     wait.wait_until(async move {
@@ -280,6 +311,17 @@ mod tests {
 
     fn instant(value: &str) -> OffsetDateTime {
         OffsetDateTime::parse(value, &Rfc3339).unwrap()
+    }
+
+    #[test]
+    fn due_check_claims_are_throttled_within_the_window() {
+        let last = Mutex::new(None);
+        let throttle = StdDuration::from_millis(50);
+        assert!(claim_due_check(&last, throttle));
+        assert!(!claim_due_check(&last, throttle));
+        std::thread::sleep(StdDuration::from_millis(60));
+        assert!(claim_due_check(&last, throttle));
+        assert!(!claim_due_check(&last, throttle));
     }
 
     #[test]

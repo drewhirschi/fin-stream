@@ -35,8 +35,16 @@
       ]
     },
     {
-      "source": "/static/timing-probe.txt",
+      "source": "/static/server-timing-probe-20260721.txt",
       "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "private, no-store"
+        },
+        {
+          "key": "X-Server-Timing-Probe",
+          "value": "control-present"
+        },
         {
           "key": "Server-Timing",
           "value": "edge-probe;dur=1.0"
