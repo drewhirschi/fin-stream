@@ -159,10 +159,10 @@ pub async fn response_perimeter(
 }
 
 pub async fn require_auth(
-    wait: nextrs::WaitUntil,
+    _wait: nextrs::WaitUntil,
     Extension(context): Extension<AppContext>,
     Extension(cron_authenticator): Extension<CronAuthenticator>,
-    Extension(cipher): Extension<Arc<CredentialCipher>>,
+    Extension(_cipher): Extension<Arc<CredentialCipher>>,
     session: Session,
     request: Request,
     next: Next,
@@ -223,9 +223,16 @@ pub async fn require_auth(
         }
         match active_result {
             Ok(true) => {
-                if cfg!(not(test)) && triggers_activity_refresh(&request) {
-                    crate::activity_refresh::schedule_tmo_if_stale(&wait, context.clone(), cipher);
-                }
+                // Disabled: `wait_until` background work starves on the Vercel
+                // Rust runtime. Fluid suspends the instance after the response
+                // and `vercel_runtime`'s Awaiter never signals pending work to
+                // the platform, so the future only advances during later
+                // invocations until its deadline or ownership lease expires.
+                // Syncs run inline instead: manual runs from the integrations
+                // page and the daily `/internal/cron` slot.
+                // if cfg!(not(test)) && triggers_activity_refresh(&request) {
+                //     crate::activity_refresh::schedule_tmo_if_stale(&wait, context.clone(), cipher);
+                // }
                 return next.run(request).await;
             }
             Ok(false) => {
@@ -244,6 +251,8 @@ pub async fn require_auth(
     unauthenticated_response(path, request.headers())
 }
 
+// Kept (with its tests) for the disabled background-refresh trigger above.
+#[cfg_attr(not(test), allow(dead_code))]
 fn triggers_activity_refresh(request: &Request) -> bool {
     if request.method() != Method::GET {
         return false;
@@ -321,6 +330,9 @@ fn is_public(path: &str) -> bool {
         || path == "/health"
         || path == "/healthz"
         || path == "/ready"
+        // TEMPORARY (2026-08-01): log-only wait_until diagnostic probe;
+        // remove together with app/internal/waituntil-probe-20260801/.
+        || path == "/internal/waituntil-probe-20260801"
         || is_static(path)
 }
 

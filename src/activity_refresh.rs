@@ -36,8 +36,11 @@ struct RefreshResult {
 }
 
 /// Register a best-effort TMO refresh without extending the authenticated
-/// page response. The future begins immediately; NextRS keeps it alive through
-/// Vercel invocation shutdown and falls back to `tokio::spawn` locally.
+/// page response. Currently disabled at its middleware call site: on the
+/// Vercel Rust runtime the platform is never told about pending `wait_until`
+/// work, so Fluid suspends the instance and the refresh starves until its
+/// deadline or ownership lease expires.
+#[allow(dead_code)]
 pub(crate) fn schedule_tmo_if_stale(
     wait: &nextrs::WaitUntil,
     context: AppContext,
