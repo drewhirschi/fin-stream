@@ -40,11 +40,11 @@ jobs:
       - name: Install client dependencies
         run: npm ci --prefix client --no-audit --no-fund
 
-      - name: Test client
-        run: npm test --prefix client
-
       - name: Build and typecheck client
         run: npm run --prefix client build
+
+      - name: Test client
+        run: npm test --prefix client
 
       - name: Rust format
         run: cargo fmt --all -- --check

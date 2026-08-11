@@ -43,8 +43,8 @@ Delete the local database only when you explicitly want to reset local data.
 cargo test --locked --no-default-features --features local-db
 cargo clippy --locked --no-default-features --features local-db --all-targets -- -D warnings
 npm ci --prefix client --no-audit --no-fund
-npm test --prefix client
 npm run --prefix client build
+npm test --prefix client
 cargo build --release --locked --no-default-features --features local-db --bin trust-deeds
 
 # Inventory the upgraded PostgreSQL source. This is a read-only preflight;
