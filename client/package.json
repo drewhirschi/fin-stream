@@ -10,6 +10,7 @@
     "orval": "orval --config ./orval.config.ts",
     "gen": "npm run dump && npm run orval",
     "build": "npm run gen && npm run css && npm run typecheck",
+    "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -30,6 +31,7 @@
     "orval": "^7.3.0",
     "prettier": "^3.9.5",
     "tailwindcss": "^4.1.11",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "vitest": "^4.1.10"
   }
 }

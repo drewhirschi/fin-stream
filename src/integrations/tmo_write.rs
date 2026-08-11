@@ -240,6 +240,19 @@ impl<'transaction> IntegrationWriteRepository<'transaction> {
             .await
             .context("upsert portfolio snapshot")?;
 
+        // Portfolio captures are complete snapshots. Stage the previous set as
+        // inactive before reactivating every loan present in this capture so
+        // paid-off or removed loans cannot linger in active portfolio views.
+        self.transaction
+            .execute(
+                "UPDATE intg_tmo_import_loan \
+                 SET is_active = 0, updated_at = ?2 \
+                 WHERE connection_id = ?1 AND is_active = 1",
+                params![capture.connection_id, capture.captured_at.clone()],
+            )
+            .await
+            .context("stage existing TMO loans for snapshot replacement")?;
+
         for loan in &capture.loans {
             let maturity_date = required_date("loan maturity date", &loan.maturity_date)?;
             let next_payment_date =
@@ -667,6 +680,13 @@ fn validate_capture(capture: &TmoSyncCapture) -> IntegrationResult<()> {
         validation_bail!("TMO capture identity is invalid");
     }
     required_date("TMO snapshot date", &capture.snapshot_date)?;
+    if capture.overview.portfolio_count < 0
+        || usize::try_from(capture.overview.portfolio_count)
+            .ok()
+            .is_none_or(|count| count != capture.loans.len())
+    {
+        validation_bail!("TMO portfolio count does not match the complete loan capture");
+    }
     require_finite(
         "TMO overview",
         &[

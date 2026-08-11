@@ -5,6 +5,7 @@ export * from "./components/ui/input";
 export * from "./components/app-shell";
 export * from "./components/page";
 export * from "./components/integration";
+export * from "./components/payment-check";
 export * from "./lib/api";
 export * from "./lib/utils";
 export * from "./types";

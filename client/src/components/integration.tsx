@@ -2,17 +2,17 @@ import { Badge, Button, Card, CardContent, ErrorState, Loading, useApi } from "@
 import type { IntegrationData } from "@/types";
 import { dateTime } from "@/lib/utils";
 
-export function useIntegration() {
+export function useIntegration(refetchInterval?: number) {
   const parts = window.location.pathname.split("/").filter(Boolean);
   const slug = parts[1] ?? "tmo";
   const section = parts[2] ?? "overview";
-  return { slug, query: useApi<IntegrationData>(["integration", slug, section], `/api/ui/integrations/${encodeURIComponent(slug)}?section=${encodeURIComponent(section)}`) };
+  return { slug, query: useApi<IntegrationData>(["integration", slug, section], `/api/ui/integrations/${encodeURIComponent(slug)}?section=${encodeURIComponent(section)}`, refetchInterval ? { refetchInterval } : undefined) };
 }
 
-export function IntegrationBoundary({ children }: { children: (data: IntegrationData, slug: string) => React.ReactNode }) {
-  const { slug, query } = useIntegration();
+export function IntegrationBoundary({ children, refetchInterval }: { children: (data: IntegrationData, slug: string) => React.ReactNode; refetchInterval?: number }) {
+  const { slug, query } = useIntegration(refetchInterval);
   if (query.isLoading) return <Loading label="Loading integration" />;
-  if (query.error || !query.data) return <ErrorState error={query.error} />;
+  if (!query.data) return <ErrorState error={query.error} />;
   return <>{children(query.data, slug)}</>;
 }
 

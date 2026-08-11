@@ -36,6 +36,7 @@ enum FixtureMode {
     HangOverview,
     PanicOverview,
     PartialDetail,
+    EmptyPortfolio,
     InvalidDate,
     CompletionRace,
 }
@@ -111,7 +112,11 @@ impl TmoProviderSession for FixtureSession {
             portfolio_yield: 8.25,
             ytd_interest: 19_250.5,
             ytd_principal: 7_000.0,
-            portfolio_count: 2,
+            portfolio_count: match self.mode {
+                FixtureMode::EmptyPortfolio => 0,
+                FixtureMode::PartialDetail => 2,
+                _ => 1,
+            },
             trust_balance: 42_500.0,
             outstanding_checks_value: 1_200.0,
             ytd_serv_fees: 875.0,
@@ -123,7 +128,9 @@ impl TmoProviderSession for FixtureSession {
         if self.mode == FixtureMode::InvalidDate {
             first.maturity_date = "not-a-date".into();
         }
-        let loans = if self.mode == FixtureMode::PartialDetail {
+        let loans = if self.mode == FixtureMode::EmptyPortfolio {
+            Vec::new()
+        } else if self.mode == FixtureMode::PartialDetail {
             vec![first, loan_summary("LN-FAIL", "Borrower Two")]
         } else {
             vec![first]
@@ -402,6 +409,43 @@ async fn successful_sync_is_atomic_and_idempotent() {
         "history:LN-100:2026-07-10:125025"
     );
     assert!(row.get::<String>(2).unwrap().contains("Borrower One"));
+}
+
+#[tokio::test]
+async fn complete_capture_deactivates_loans_missing_from_the_next_sync() {
+    let (context, cipher, _) = test_context(true).await;
+    let first_factory = FixtureFactory::new(FixtureMode::Success);
+    let second_factory = FixtureFactory::new(FixtureMode::EmptyPortfolio);
+    let clock = fixed_clock();
+
+    assert!(matches!(
+        service(&context, &cipher, &first_factory, &clock)
+            .run_manual()
+            .await
+            .unwrap(),
+        SyncExecution::Completed(_)
+    ));
+    assert!(matches!(
+        service(&context, &cipher, &second_factory, &clock)
+            .run_manual()
+            .await
+            .unwrap(),
+        SyncExecution::Completed(_)
+    ));
+
+    let connection = context.connection().await.unwrap();
+    assert_eq!(
+        scalar_i64(&connection, "SELECT COUNT(*) FROM intg_tmo_import_loan").await,
+        1
+    );
+    assert_eq!(
+        scalar_i64(
+            &connection,
+            "SELECT COUNT(*) FROM intg_tmo_import_loan WHERE is_active = 1"
+        )
+        .await,
+        0
+    );
 }
 
 #[tokio::test]

@@ -171,22 +171,34 @@ impl TmoClient {
     }
 
     pub async fn get_portfolio(&self) -> ProviderResult<Vec<TmoLoanSummary>> {
-        let request = serde_json::json!({
-            "filters": { "showPaidOffLoans": false },
-            "params": {
-                "page": 1,
-                "rowsPerPage": 100,
-                "order": { "name": "loanAccount", "direction": "asc" }
+        const ROWS_PER_PAGE: i32 = 100;
+        let mut page = 1_i32;
+        let mut expected_total = None;
+        let mut loans = Vec::new();
+
+        loop {
+            let request = serde_json::json!({
+                "filters": { "showPaidOffLoans": false },
+                "params": {
+                    "page": page,
+                    "rowsPerPage": ROWS_PER_PAGE,
+                    "order": { "name": "loanAccount", "direction": "asc" }
+                }
+            });
+            let request = request.to_string();
+            let response: TmoPaginatedResponse<TmoLoanSummary> = self
+                .get_data(
+                    &["api", "portfolio", "getPortfolioData"],
+                    Some(&[("request", request.as_str())]),
+                )
+                .await?;
+            if append_paginated_page(&mut loans, &mut expected_total, response, page)? {
+                return Ok(loans);
             }
-        });
-        let request = request.to_string();
-        let response: TmoPaginatedResponse<TmoLoanSummary> = self
-            .get_data(
-                &["api", "portfolio", "getPortfolioData"],
-                Some(&[("request", request.as_str())]),
-            )
-            .await?;
-        Ok(response.data)
+            page = page.checked_add(1).ok_or(ProviderError::InvalidResponse {
+                provider: ProviderName::Tmo,
+            })?;
+        }
     }
 
     pub async fn get_loan_detail(&self, loan_account: &str) -> ProviderResult<TmoLoanDetail> {
@@ -344,6 +356,41 @@ pub struct TmoPaginatedResponse<T> {
     pub data: Vec<T>,
 }
 
+fn append_paginated_page<T>(
+    rows: &mut Vec<T>,
+    expected_total: &mut Option<usize>,
+    response: TmoPaginatedResponse<T>,
+    requested_page: i32,
+) -> ProviderResult<bool> {
+    let total_count =
+        usize::try_from(response.total_count).map_err(|_| ProviderError::InvalidResponse {
+            provider: ProviderName::Tmo,
+        })?;
+    let rows_per_page =
+        usize::try_from(response.rows_per_page).map_err(|_| ProviderError::InvalidResponse {
+            provider: ProviderName::Tmo,
+        })?;
+    if response.page != requested_page
+        || rows_per_page == 0
+        || response.data.len() > rows_per_page
+        || expected_total.is_some_and(|expected| expected != total_count)
+        || (response.data.is_empty() && rows.len() < total_count)
+    {
+        return Err(ProviderError::InvalidResponse {
+            provider: ProviderName::Tmo,
+        });
+    }
+
+    *expected_total = Some(total_count);
+    rows.extend(response.data);
+    if rows.len() > total_count {
+        return Err(ProviderError::InvalidResponse {
+            provider: ProviderName::Tmo,
+        });
+    }
+    Ok(rows.len() == total_count)
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TmoLoanSummary {
@@ -442,8 +489,8 @@ mod tests {
     };
 
     use super::{
-        TmoClient, TmoClientOptions, TmoCredentials, TmoResponse, TmoUserInfo,
-        normalize_check_number,
+        TmoClient, TmoClientOptions, TmoCredentials, TmoPaginatedResponse, TmoResponse,
+        TmoUserInfo, append_paginated_page, normalize_check_number,
     };
     use crate::providers::{HttpSettings, ProviderError, ProviderName};
 
@@ -502,6 +549,58 @@ mod tests {
     fn check_number_normalization_matches_legacy_behavior() {
         assert_eq!(normalize_check_number(" Print Check "), None);
         assert_eq!(normalize_check_number(" 12345 "), Some("12345".into()));
+    }
+
+    #[test]
+    fn portfolio_pagination_collects_more_than_one_page_and_rejects_gaps() {
+        let mut rows = Vec::new();
+        let mut expected_total = None;
+        assert!(
+            !append_paginated_page(
+                &mut rows,
+                &mut expected_total,
+                TmoPaginatedResponse {
+                    page: 1,
+                    rows_per_page: 100,
+                    total_count: 101,
+                    data: (0..100).collect(),
+                },
+                1,
+            )
+            .unwrap()
+        );
+        assert!(
+            append_paginated_page(
+                &mut rows,
+                &mut expected_total,
+                TmoPaginatedResponse {
+                    page: 2,
+                    rows_per_page: 100,
+                    total_count: 101,
+                    data: vec![100],
+                },
+                2,
+            )
+            .unwrap()
+        );
+        assert_eq!(rows.len(), 101);
+
+        let mut incomplete = Vec::<i32>::new();
+        let mut incomplete_total = None;
+        assert!(
+            append_paginated_page(
+                &mut incomplete,
+                &mut incomplete_total,
+                TmoPaginatedResponse {
+                    page: 1,
+                    rows_per_page: 100,
+                    total_count: 1,
+                    data: Vec::new(),
+                },
+                1,
+            )
+            .is_err()
+        );
     }
 
     #[tokio::test]
