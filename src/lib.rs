@@ -923,12 +923,16 @@ mod tests {
             .oneshot(cron_request(Some("test-cron-secret")))
             .await
             .unwrap();
-        assert_eq!(not_configured.status(), StatusCode::CONFLICT);
+        assert_eq!(not_configured.status(), StatusCode::OK);
         let body = to_bytes(not_configured.into_body(), usize::MAX)
             .await
             .unwrap();
         let problem: serde_json::Value = serde_json::from_slice(&body).unwrap();
-        assert_eq!(problem["outcome"], "not_configured");
+        assert_eq!(
+            problem["integrations"][0]["outcome"],
+            "not_configured",
+            "an unconfigured integration is a healthy per-entry no-op"
+        );
 
         connection
             .execute(
@@ -946,7 +950,8 @@ mod tests {
         assert_eq!(manual.status(), StatusCode::OK);
         let body = to_bytes(manual.into_body(), usize::MAX).await.unwrap();
         let result: serde_json::Value = serde_json::from_slice(&body).unwrap();
-        assert_eq!(result["outcome"], "manual");
+        assert_eq!(result["integrations"][0]["provider"], "tmo");
+        assert_eq!(result["integrations"][0]["outcome"], "manual");
 
         connection
             .execute("DELETE FROM operation_control WHERE id = 1", ())

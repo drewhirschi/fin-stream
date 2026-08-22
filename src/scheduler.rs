@@ -13,7 +13,10 @@ use time::{Duration, OffsetDateTime};
 use crate::{
     crypto::CredentialCipher,
     db::AppContext,
-    integrations::{IntegrationRepository, IntegrationWriteRepository},
+    integrations::{
+        IntegrationRepository, IntegrationWriteRepository,
+        actions::{MONARCH_CONNECTION_SLUG, run_monarch_scheduled},
+    },
     operations::{OperationError, OperationRepository, SyncRunStatus},
     sync_runtime::{
         DirectTmoProviderFactory, SyncExecution, SyncRuntimeError, SystemSyncClock,
@@ -167,107 +170,124 @@ async fn run_cron_at(
     cipher: Arc<CredentialCipher>,
     now: OffsetDateTime,
 ) -> Response {
-    let preparation = match prepare_tmo_schedule(&context, now).await {
-        Ok(preparation) => preparation,
-        Err(SchedulerError::InvalidCadence) => {
-            return cron_error(
-                StatusCode::CONFLICT,
-                "invalid_cadence",
-                "The TMO synchronization cadence is not supported.",
-                false,
-            );
-        }
-        Err(SchedulerError::Operation(OperationError::ReadOnly)) => {
-            return cron_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "read_only",
-                "Writes are temporarily disabled.",
-                true,
-            );
-        }
-        Err(SchedulerError::Operation(OperationError::SchedulerDisabled)) => {
-            return cron_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "scheduler_disabled",
-                "Scheduled synchronization is disabled.",
-                true,
-            );
-        }
-        Err(SchedulerError::Operation(error)) => {
-            tracing::error!(%error, "cron could not recheck operation control");
-            return cron_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "service_unavailable",
-                "Scheduled synchronization is temporarily unavailable.",
-                true,
-            );
-        }
-        Err(SchedulerError::Storage(error)) => {
-            tracing::error!(%error, "cron could not prepare the TMO schedule");
-            return cron_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "service_unavailable",
-                "Scheduled synchronization is temporarily unavailable.",
-                true,
-            );
-        }
-    };
-
-    let SchedulePreparation::Due {
-        scheduled_for,
-        next_scheduled_at,
-    } = preparation
-    else {
-        return match preparation {
-            SchedulePreparation::NotConfigured => (
-                StatusCode::CONFLICT,
-                Json(json!({
-                    "outcome": "not_configured",
-                    "provider": TMO_CONNECTION_SLUG,
-                    "message": "The TMO integration is not configured.",
-                })),
-            )
-                .into_response(),
-            SchedulePreparation::Manual => (
-                StatusCode::OK,
-                Json(json!({
-                    "outcome": "manual",
-                    "provider": TMO_CONNECTION_SLUG,
-                    "scheduled_for": null,
-                    "next_scheduled_at": null,
-                })),
-            )
-                .into_response(),
-            SchedulePreparation::Due { .. } => unreachable!("due preparation was matched above"),
+    let mut entries = Vec::new();
+    let mut worst = StatusCode::OK;
+    let mut retry_after = false;
+    for slug in [TMO_CONNECTION_SLUG, MONARCH_CONNECTION_SLUG] {
+        let preparation = match prepare_schedule(&context, slug, now).await {
+            Ok(preparation) => preparation,
+            Err(SchedulerError::InvalidCadence) => {
+                entries.push(json!({
+                    "provider": slug,
+                    "outcome": "invalid_cadence",
+                }));
+                worst = worst.max(StatusCode::CONFLICT);
+                continue;
+            }
+            Err(SchedulerError::Operation(OperationError::ReadOnly)) => {
+                return cron_error(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "read_only",
+                    "Writes are temporarily disabled.",
+                    true,
+                );
+            }
+            Err(SchedulerError::Operation(OperationError::SchedulerDisabled)) => {
+                return cron_error(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "scheduler_disabled",
+                    "Scheduled synchronization is disabled.",
+                    true,
+                );
+            }
+            Err(SchedulerError::Operation(error)) => {
+                tracing::error!(%error, "cron could not recheck operation control");
+                return cron_error(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "service_unavailable",
+                    "Scheduled synchronization is temporarily unavailable.",
+                    true,
+                );
+            }
+            Err(SchedulerError::Storage(error)) => {
+                tracing::error!(%error, slug, "cron could not prepare the schedule");
+                return cron_error(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "service_unavailable",
+                    "Scheduled synchronization is temporarily unavailable.",
+                    true,
+                );
+            }
         };
-    };
+        let (scheduled_for, next_scheduled_at) = match preparation {
+            SchedulePreparation::NotConfigured => {
+                entries.push(json!({ "provider": slug, "outcome": "not_configured" }));
+                continue;
+            }
+            SchedulePreparation::Manual => {
+                entries.push(json!({ "provider": slug, "outcome": "manual" }));
+                continue;
+            }
+            SchedulePreparation::Due {
+                scheduled_for,
+                next_scheduled_at,
+            } => (scheduled_for, next_scheduled_at),
+        };
 
-    let provider_factory = DirectTmoProviderFactory;
-    let clock = SystemSyncClock;
-    let service = TmoSyncService::production(&context, &cipher, &provider_factory, &clock);
-    match service.run_scheduled(&scheduled_for).await {
-        Ok(execution) => cron_execution_response(
-            execution,
-            scheduled_for.as_str(),
-            next_scheduled_at.as_str(),
-        ),
-        Err(error) => {
-            tracing::error!(
-                failure_class = error.class_code(),
-                "cron could not coordinate the TMO synchronization"
-            );
-            cron_error(
-                error.http_status(),
-                error.class_code(),
-                error.public_message(),
-                matches!(error, SyncRuntimeError::Storage(_)),
-            )
+        let (status, needs_retry, mut entry) = match slug {
+            TMO_CONNECTION_SLUG => {
+                let provider_factory = DirectTmoProviderFactory;
+                let clock = SystemSyncClock;
+                let service =
+                    TmoSyncService::production(&context, &cipher, &provider_factory, &clock);
+                match service.run_scheduled(&scheduled_for).await {
+                    Ok(execution) => tmo_execution_entry(execution),
+                    Err(error) => {
+                        tracing::error!(
+                            failure_class = error.class_code(),
+                            "cron could not coordinate the TMO synchronization"
+                        );
+                        (
+                            error.http_status(),
+                            matches!(error, SyncRuntimeError::Storage(_)),
+                            json!({
+                                "outcome": "failed",
+                                "error": error.class_code(),
+                                "message": error.public_message(),
+                            }),
+                        )
+                    }
+                }
+            }
+            _ => {
+                let (status, entry) =
+                    run_monarch_scheduled(&context, &cipher, &scheduled_for).await;
+                (status, status == StatusCode::SERVICE_UNAVAILABLE, entry)
+            }
+        };
+        if let Some(object) = entry.as_object_mut() {
+            object.insert("provider".into(), json!(slug));
+            object.insert("scheduled_for".into(), json!(scheduled_for));
+            object.insert("next_scheduled_at".into(), json!(next_scheduled_at));
         }
+        entries.push(entry);
+        worst = worst.max(status);
+        retry_after |= needs_retry;
     }
+
+    let mut response = (worst, Json(json!({ "integrations": entries }))).into_response();
+    if retry_after {
+        response.headers_mut().insert(
+            header::RETRY_AFTER,
+            HeaderValue::from_static(RETRY_AFTER_SECONDS),
+        );
+    }
+    response
 }
 
-async fn prepare_tmo_schedule(
+async fn prepare_schedule(
     context: &AppContext,
+    slug: &str,
     now: OffsetDateTime,
 ) -> Result<SchedulePreparation, SchedulerError> {
     let connection = context
@@ -283,7 +303,7 @@ async fn prepare_tmo_schedule(
         .await
         .map_err(SchedulerError::Operation)?;
     let integration = IntegrationRepository::new(&transaction)
-        .connection_by_slug(TMO_CONNECTION_SLUG)
+        .connection_by_slug(slug)
         .await
         .map_err(|error| SchedulerError::Storage(error.into()))?;
     let Some(integration) = integration else {
@@ -299,11 +319,7 @@ async fn prepare_tmo_schedule(
     let updated_at = format_utc_millis(now);
     let next_scheduled_at = next.map(format_utc_millis);
     IntegrationWriteRepository::new(&transaction)
-        .set_next_scheduled_at(
-            TMO_CONNECTION_SLUG,
-            next_scheduled_at.as_deref(),
-            &updated_at,
-        )
+        .set_next_scheduled_at(slug, next_scheduled_at.as_deref(), &updated_at)
         .await
         .map_err(|error| SchedulerError::Storage(error.into()))?;
     transaction
@@ -332,11 +348,7 @@ async fn prepare_tmo_schedule(
     })
 }
 
-fn cron_execution_response(
-    execution: SyncExecution,
-    scheduled_for: &str,
-    next_scheduled_at: &str,
-) -> Response {
+fn tmo_execution_entry(execution: SyncExecution) -> (StatusCode, bool, serde_json::Value) {
     let (status, outcome, retry_policy, retry_after) = match &execution {
         SyncExecution::Completed(_) => (StatusCode::OK, "completed", "none", false),
         SyncExecution::Failed { .. } => (
@@ -368,18 +380,30 @@ fn cron_execution_response(
         }
         SyncExecution::CoveredBySuccess(_) => (StatusCode::OK, "covered_by_success", "none", false),
     };
-    let mut response = (
+    (
         status,
-        Json(json!({
+        retry_after,
+        json!({
             "outcome": outcome,
-            "provider": TMO_CONNECTION_SLUG,
-            "scheduled_for": scheduled_for,
-            "next_scheduled_at": next_scheduled_at,
             "retry_policy": retry_policy,
             "run": execution.run(),
-        })),
+        }),
     )
-        .into_response();
+}
+
+#[cfg(all(test, feature = "local-db"))]
+fn cron_execution_response(
+    execution: SyncExecution,
+    scheduled_for: &str,
+    next_scheduled_at: &str,
+) -> Response {
+    let (status, retry_after, mut entry) = tmo_execution_entry(execution);
+    if let Some(object) = entry.as_object_mut() {
+        object.insert("provider".into(), json!(TMO_CONNECTION_SLUG));
+        object.insert("scheduled_for".into(), json!(scheduled_for));
+        object.insert("next_scheduled_at".into(), json!(next_scheduled_at));
+    }
+    let mut response = (status, Json(entry)).into_response();
     if retry_after {
         response.headers_mut().insert(
             header::RETRY_AFTER,
@@ -523,7 +547,7 @@ mod tests {
     #[tokio::test]
     async fn preparation_persists_the_truthful_next_slot_transactionally() {
         let context = context_with_cadence("every_6h").await;
-        let decision = prepare_tmo_schedule(&context, at(2026, Month::July, 14, 13, 25))
+        let decision = prepare_schedule(&context, "tmo", at(2026, Month::July, 14, 13, 25))
             .await
             .unwrap();
         assert_eq!(
@@ -559,7 +583,7 @@ mod tests {
                 )
                 .await
                 .unwrap();
-            let result = prepare_tmo_schedule(&context, at(2026, Month::July, 14, 13, 25)).await;
+            let result = prepare_schedule(&context, "tmo", at(2026, Month::July, 14, 13, 25)).await;
             assert_eq!(result.is_err(), is_error);
             if !is_error {
                 assert_eq!(result.unwrap(), SchedulePreparation::Manual);
@@ -632,5 +656,26 @@ mod tests {
         let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
         let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(body["outcome"], "slot_already_running");
+    }
+
+    #[tokio::test]
+    async fn cron_reports_every_integration_and_noops_when_nothing_is_due() {
+        let context = context_with_cadence("manual").await;
+        let cipher = Arc::new(CredentialCipher::new("scheduler-test-key").unwrap());
+        let response = run_cron_at(
+            context,
+            cipher,
+            at(2026, Month::July, 14, 13, 25),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let entries = body["integrations"].as_array().unwrap();
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0]["provider"], "tmo");
+        assert_eq!(entries[0]["outcome"], "manual");
+        assert_eq!(entries[1]["provider"], "monarch");
+        assert_eq!(entries[1]["outcome"], "not_configured");
     }
 }

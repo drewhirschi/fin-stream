@@ -38,7 +38,7 @@ path = "api/index.rs"
 required-features = ["remote-db"]
 
 [build-dependencies]
-nextrs = { version = "0.5", features = ["build", "tsx"] }
+nextrs = { version = "0.6", features = ["build", "tsx"] }
 
 [dependencies]
 aes-gcm = "0.10"
@@ -54,7 +54,7 @@ dotenvy = { version = "0.15", optional = true }
 futures-util = "0.3"
 hmac = "0.12"
 libsql = { version = "=0.9.30", default-features = false }
-nextrs = { version = "0.5", default-features = false }
+nextrs = { version = "0.6", default-features = false }
 rand = "0.8"
 reqwest = { version = "0.12", default-features = false, features = ["cookies", "json", "rustls-tls"] }
 serde = { version = "1", features = ["derive"] }

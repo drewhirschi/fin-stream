@@ -25,7 +25,7 @@ use crate::{
     crypto::{CredentialCipher, CredentialCryptoError},
     db::AppContext,
     finance::IsoDate,
-    operations::{ClaimOutcome, OperationError, OperationRepository, SyncCompletion, SyncRun},
+    operations::{ClaimOutcome, OperationError, OperationRepository, SyncCompletion, SyncRun, SyncRunStatus},
     providers::{
         ProviderError, ProviderResult,
         monarch::{AccountBalance, MonarchClient},
@@ -308,9 +308,81 @@ pub async fn sync_monarch_balance(
     let provider = DirectMonarchBalanceProvider;
     let clock = SystemSyncClock;
     let service = MonarchBalanceService::with_dependencies(&context, &cipher, &provider, &clock);
-    match service.run(as_of_date).await {
+    match service.run(as_of_date, None).await {
         Ok(execution) => monarch_execution_response(execution),
         Err(error) => monarch_error_response(error),
+    }
+}
+
+/// Cron entry point. The slot's UTC calendar date is the balance `as_of_date`;
+/// the caller must already hold the scheduler-enabled write gate. Returns the
+/// per-integration summary entry for the cron response body.
+pub(crate) async fn run_monarch_scheduled(
+    context: &AppContext,
+    cipher: &CredentialCipher,
+    scheduled_for: &str,
+) -> (StatusCode, serde_json::Value) {
+    let Some(as_of_date) = scheduled_for
+        .get(..10)
+        .and_then(|date| IsoDate::from_str(date).ok())
+    else {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            json!({ "outcome": "invalid_slot", "scheduled_for": scheduled_for }),
+        );
+    };
+    let provider = DirectMonarchBalanceProvider;
+    let clock = SystemSyncClock;
+    let service = MonarchBalanceService::with_dependencies(context, cipher, &provider, &clock);
+    match service.run(as_of_date, Some(scheduled_for)).await {
+        Ok(MonarchSyncExecution::Completed { run, summary }) => (
+            StatusCode::OK,
+            json!({
+                "outcome": "completed",
+                "run_id": run.id,
+                "adjusted_balance": summary.adjusted_balance,
+                "as_of_date": summary.as_of_date,
+            }),
+        ),
+        Ok(MonarchSyncExecution::Failed { run, class, message }) => (
+            class.status(),
+            json!({
+                "outcome": "failed",
+                "error": class.code(),
+                "message": message,
+                "run_id": run.id,
+            }),
+        ),
+        Ok(MonarchSyncExecution::AlreadyRunning(run)) => (
+            StatusCode::ACCEPTED,
+            json!({ "outcome": "already_running", "run_id": run.id }),
+        ),
+        Ok(MonarchSyncExecution::AlreadyScheduled(run)) => (
+            StatusCode::OK,
+            json!({
+                "outcome": match run.status {
+                    SyncRunStatus::Running => "slot_already_running",
+                    SyncRunStatus::Error => "failed_slot_already_recorded",
+                    _ => "slot_already_completed",
+                },
+                "run_id": run.id,
+            }),
+        ),
+        Ok(MonarchSyncExecution::CoveredBySuccess(run)) => (
+            StatusCode::OK,
+            json!({ "outcome": "covered_by_success", "run_id": run.id }),
+        ),
+        Err(error) => {
+            let class = error.failure_class();
+            tracing::error!(
+                failure_class = class.code(),
+                "scheduled Monarch balance refresh failed"
+            );
+            (
+                class.status(),
+                json!({ "outcome": "failed", "error": class.code(), "message": error.public_message() }),
+            )
+        }
     }
 }
 
@@ -373,7 +445,14 @@ impl<'service> MonarchBalanceService<'service> {
         }
     }
 
-    async fn run(&self, as_of_date: IsoDate) -> Result<MonarchSyncExecution, MonarchSyncError> {
+    /// `scheduled_for` selects the cron claim path: `Some(slot)` uses the
+    /// unique-index-backed scheduled claim so redelivery of an hourly trigger
+    /// is a no-op; `None` is the interactive manual claim.
+    async fn run(
+        &self,
+        as_of_date: IsoDate,
+        scheduled_for: Option<&str>,
+    ) -> Result<MonarchSyncExecution, MonarchSyncError> {
         let connection_id = self.load_connection().await?;
         let started = self.clock.now();
         let started_at = format_utc_millis(started);
@@ -388,15 +467,26 @@ impl<'service> MonarchBalanceService<'service> {
             .interrupt_stale(MONARCH_CONNECTION_SLUG, &started_at, &stale_cutoff)
             .await
             .map_err(MonarchSyncError::from_operation)?;
-        let claim = operations
-            .claim_manual(MONARCH_CONNECTION_SLUG, &started_at)
-            .await
-            .map_err(MonarchSyncError::from_operation)?;
+        let claim = match scheduled_for {
+            None => operations.claim_manual(MONARCH_CONNECTION_SLUG, &started_at).await,
+            Some(slot) => {
+                operations
+                    .claim_scheduled(MONARCH_CONNECTION_SLUG, slot, &started_at)
+                    .await
+            }
+        }
+        .map_err(MonarchSyncError::from_operation)?;
         drop(claim_connection);
         let run = match claim {
             ClaimOutcome::Claimed(run) => run,
             ClaimOutcome::AlreadyRunning(run) => {
                 return Ok(MonarchSyncExecution::AlreadyRunning(run));
+            }
+            ClaimOutcome::AlreadyScheduled(run) if scheduled_for.is_some() => {
+                return Ok(MonarchSyncExecution::AlreadyScheduled(run));
+            }
+            ClaimOutcome::CoveredBySuccess(run) if scheduled_for.is_some() => {
+                return Ok(MonarchSyncExecution::CoveredBySuccess(run));
             }
             ClaimOutcome::AlreadyScheduled(_) | ClaimOutcome::CoveredBySuccess(_) => {
                 return Err(MonarchSyncError::Coordination);
@@ -790,6 +880,8 @@ enum MonarchSyncExecution {
         message: &'static str,
     },
     AlreadyRunning(SyncRun),
+    AlreadyScheduled(SyncRun),
+    CoveredBySuccess(SyncRun),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -957,6 +1049,15 @@ fn monarch_execution_response(execution: MonarchSyncExecution) -> Response {
                 "outcome": "already_running",
                 "run_id": run.id,
                 "started_at": run.started_at,
+            })),
+        )
+            .into_response(),
+        MonarchSyncExecution::AlreadyScheduled(run) | MonarchSyncExecution::CoveredBySuccess(run) => (
+            StatusCode::OK,
+            Json(json!({
+                "ok": true,
+                "outcome": "slot_already_covered",
+                "run_id": run.id,
             })),
         )
             .into_response(),
@@ -1236,7 +1337,7 @@ mod tests {
         let fixed_clock = clock();
         let service =
             MonarchBalanceService::with_dependencies(&context, &cipher, &provider, &fixed_clock);
-        let execution = service.run("2026-07-14".parse().unwrap()).await.unwrap();
+        let execution = service.run("2026-07-14".parse().unwrap(), None).await.unwrap();
         assert!(matches!(execution, MonarchSyncExecution::Completed { .. }));
         assert_eq!(provider.calls.load(Ordering::SeqCst), 1);
 
@@ -1312,7 +1413,7 @@ mod tests {
         let fixed_clock = clock();
         let service =
             MonarchBalanceService::with_dependencies(&context, &cipher, &provider, &fixed_clock);
-        let execution = service.run("2026-07-14".parse().unwrap()).await.unwrap();
+        let execution = service.run("2026-07-14".parse().unwrap(), None).await.unwrap();
         let MonarchSyncExecution::Failed {
             run,
             class,
@@ -1408,7 +1509,7 @@ mod tests {
         let fixed_clock = clock();
         let service =
             MonarchBalanceService::with_dependencies(&context, &cipher, &provider, &fixed_clock);
-        let execution = service.run("2026-07-14".parse().unwrap()).await.unwrap();
+        let execution = service.run("2026-07-14".parse().unwrap(), None).await.unwrap();
         assert!(matches!(execution, MonarchSyncExecution::AlreadyRunning(_)));
         assert_eq!(provider.calls.load(Ordering::SeqCst), 0);
     }
@@ -1425,7 +1526,7 @@ mod tests {
         let fixed_clock = clock();
         let service =
             MonarchBalanceService::with_dependencies(&context, &cipher, &provider, &fixed_clock);
-        let execution = service.run("2026-07-14".parse().unwrap()).await.unwrap();
+        let execution = service.run("2026-07-14".parse().unwrap(), None).await.unwrap();
         assert!(matches!(
             execution,
             MonarchSyncExecution::Failed {

@@ -1,0 +1,15 @@
+[app]
+name = "finstream"
+url = "https://finstream.hirschi.dev"
+
+# Hourly trigger: the route reads each integration's stored sync_cadence and
+# only claims/runs slots that are actually due, so redelivery is a no-op.
+[[crons]]
+path = "/internal/cron"
+schedule = "0 * * * *"
+
+# Native Vercel daily backstop in case the Cloudflare Worker is down.
+[[crons]]
+path = "/internal/cron"
+schedule = "0 7 * * *"
+provider = "vercel"
