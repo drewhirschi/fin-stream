@@ -1,4 +1,4 @@
-use std::{error::Error, fmt, panic::AssertUnwindSafe, time::Duration as StdDuration};
+use std::{error::Error, fmt, future::Future, panic::AssertUnwindSafe, time::Duration as StdDuration};
 
 use async_trait::async_trait;
 use futures_util::FutureExt;
@@ -277,6 +277,36 @@ impl<'service> TmoSyncService<'service> {
         Ok(value.id)
     }
 
+    /// Wrap one provider call with stage-labeled timing. `ProviderError`
+    /// carries no URLs, bodies, or credentials, so its display form is safe
+    /// to log; the stage label plus elapsed time is what post-incident
+    /// debugging needs to say *which* request hung and for how long.
+    async fn traced_stage<T>(
+        stage: &'static str,
+        call: impl Future<Output = crate::providers::ProviderResult<T>>,
+    ) -> Result<T, SyncRuntimeError> {
+        let started = std::time::Instant::now();
+        match call.await {
+            Ok(value) => {
+                tracing::info!(
+                    stage,
+                    elapsed_ms = started.elapsed().as_millis() as u64,
+                    "TMO stage finished"
+                );
+                Ok(value)
+            }
+            Err(error) => {
+                tracing::error!(
+                    stage,
+                    elapsed_ms = started.elapsed().as_millis() as u64,
+                    %error,
+                    "TMO stage failed"
+                );
+                Err(SyncRuntimeError::Provider(error))
+            }
+        }
+    }
+
     async fn capture(&self, connection_id: i64) -> Result<TmoSyncCapture, SyncRuntimeError> {
         let connection = self
             .context
@@ -304,21 +334,12 @@ impl<'service> TmoSyncService<'service> {
             pin.as_str(),
         );
         drop(pin);
-        let provider = self
-            .provider_factory
-            .login(credentials)
-            .await
-            .map_err(SyncRuntimeError::Provider)?;
+        let provider =
+            Self::traced_stage("login", self.provider_factory.login(credentials)).await?;
 
         let user = provider.user().clone();
-        let overview = provider
-            .overview()
-            .await
-            .map_err(SyncRuntimeError::Provider)?;
-        let loans = provider
-            .portfolio()
-            .await
-            .map_err(SyncRuntimeError::Provider)?;
+        let overview = Self::traced_stage("overview", provider.overview()).await?;
+        let loans = Self::traced_stage("portfolio", provider.portfolio()).await?;
         let mut loan_details = Vec::with_capacity(loans.len());
         let mut loan_detail_failures = 0_i64;
         for loan in &loans {
@@ -334,10 +355,15 @@ impl<'service> TmoSyncService<'service> {
                 }
             }
         }
-        let payments = provider
-            .history()
-            .await
-            .map_err(SyncRuntimeError::Provider)?;
+        if loan_detail_failures > 0 {
+            tracing::warn!(
+                stage = "loan_detail",
+                failures = loan_detail_failures,
+                attempted = loans.len(),
+                "TMO loan-detail calls failed"
+            );
+        }
+        let payments = Self::traced_stage("history", provider.history()).await?;
         let captured = self.clock.now();
 
         Ok(TmoSyncCapture {
