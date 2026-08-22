@@ -25,7 +25,7 @@ use crate::{
     db::AppContext,
     media::{HeadObject, MediaBackend, MediaError, MediaResult, MediaService, PresignedUpload},
     operations::{OperationRepository, utc_now_millis},
-    router_with_store,
+    app::router_with_store,
     session_store::LibsqlSessionStore,
     workspace_inbox::WorkspaceInboxRepository,
 };

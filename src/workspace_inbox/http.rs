@@ -298,7 +298,7 @@ mod tests {
     use super::*;
     use crate::{
         cron_auth::CronAuthenticator, crypto::CredentialCipher, db::AppContext,
-        operations::OperationRepository, router_with_store, session_store::LibsqlSessionStore,
+        app::router_with_store, operations::OperationRepository, session_store::LibsqlSessionStore,
     };
 
     const EMAIL: &str = "admin@example.com";
