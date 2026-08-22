@@ -8,10 +8,9 @@ use axum::{
     extract::{DefaultBodyLimit, Extension},
     middleware::{from_fn, from_fn_with_state},
 };
-use crate::{
-    config, cron_auth, crypto, db, finance, media, middleware, operations, resend,
-    write_gate,
-};
+use crate::{config, cron_auth, crypto, db, media, middleware, resend, write_gate};
+#[cfg(feature = "local-db")]
+use crate::{finance, operations};
 use crate::session_store::LibsqlSessionStore;
 use std::sync::Arc;
 use time::Duration;
