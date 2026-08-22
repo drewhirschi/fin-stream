@@ -35,3 +35,19 @@ Adopt the NextRS 0.6 cron conventions rather than bespoke plumbing.
    `vercel build --prod && vercel deploy --prebuilt --prod`.
 5. **Background-job health review** — read `sync_log` outcome history from
    Turso (needs `turso auth login`) and report failure classes since July.
+
+## Follow-ups (2026-08-22 evening)
+
+- Deployed: app (new CRON_SECRET, hourly-aware route), Cloudflare Worker
+  `finstream-cron`, scheduler gate re-enabled (was durably off since 07-19).
+- TMO has had zero successes since 2026-08-12: every attempt hangs at or
+  before login and dies on request timeout / the 240s execution deadline.
+  Stage-labeled timing (login/overview/portfolio/history + elapsed_ms) is now
+  committed so the next failure names its stage; deploy pending.
+- nextrs 0.6 layout: `src/app.rs` extraction done. Client migration to the
+  modern scaffold (root package.json, generated `.nextrs/client`, shared UI in
+  `components/`) is NOT started; `cargo nextrs client generate` meanwhile
+  supports `client/` as an acknowledged legacy layout. A reference scaffold
+  from `nextrs new` shows the target shape: root-owned JS deps, no
+  node_modules symlink hack, `.nextrs/ensure-client.mjs` + template, hidden
+  `dump-openapi` helper instead of `src/bin/dump-openapi.rs`.
