@@ -1,6 +1,5 @@
 #![allow(clippy::match_single_binding)] // Generated NextRS asset registry has an empty loading match.
 
-pub mod activity_refresh;
 mod auth;
 mod config;
 mod cron_auth;
@@ -310,18 +309,6 @@ mod tests {
     }
 
     #[test]
-    fn generated_route_registry_contains_activity_refresh_post() {
-        let registry = generated_registry();
-        let refresh = registry
-            .entries
-            .iter()
-            .find(|entry| entry.path == "/api/integrations/refresh-if-stale")
-            .expect("activity refresh route is generated from its route.rs");
-        assert_eq!(refresh.methods.len(), 1);
-        assert_eq!(refresh.methods[0].0, axum::http::Method::POST);
-    }
-
-    #[test]
     fn generated_openapi_contains_typed_sync_status_and_run_contracts() {
         let document = generated_openapi();
         let status = document
@@ -578,73 +565,6 @@ mod tests {
         let invalid_date = app
             .oneshot(
                 Request::post("/api/sync/balance")
-                    .header(header::COOKIE, cookie)
-                    .header(header::CONTENT_TYPE, "application/json")
-                    .body(Body::from(r#"{"as_of_date":"2026-02-31"}"#))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(invalid_date.status(), StatusCode::UNPROCESSABLE_ENTITY);
-    }
-
-    #[tokio::test]
-    async fn activity_refresh_is_authenticated_write_gated_and_cheap_when_nothing_is_due() {
-        let (app, context) = test_app_with_context(true).await;
-        let request_body = r#"{"as_of_date":"2026-07-14"}"#;
-
-        let anonymous = app
-            .clone()
-            .oneshot(
-                Request::post("/api/integrations/refresh-if-stale")
-                    .header(header::CONTENT_TYPE, "application/json")
-                    .body(Body::from(request_body))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(anonymous.status(), StatusCode::UNAUTHORIZED);
-
-        let login = app.clone().oneshot(login_request(PASSWORD)).await.unwrap();
-        let cookie = session_cookie(&login);
-        let read_only = app
-            .clone()
-            .oneshot(
-                Request::post("/api/integrations/refresh-if-stale")
-                    .header(header::COOKIE, &cookie)
-                    .header(header::CONTENT_TYPE, "application/json")
-                    .body(Body::from(request_body))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(read_only.status(), StatusCode::SERVICE_UNAVAILABLE);
-
-        OperationRepository::new(&context.connection().await.unwrap())
-            .enable_writes("2026-07-14T18:00:00.000Z")
-            .await
-            .unwrap();
-        let checked = app
-            .clone()
-            .oneshot(
-                Request::post("/api/integrations/refresh-if-stale")
-                    .header(header::COOKIE, &cookie)
-                    .header(header::CONTENT_TYPE, "application/json")
-                    .body(Body::from(request_body))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(checked.status(), StatusCode::OK);
-        let body = to_bytes(checked.into_body(), usize::MAX).await.unwrap();
-        let payload: serde_json::Value = serde_json::from_slice(&body).unwrap();
-        assert_eq!(payload["ok"], true);
-        assert_eq!(payload["refresh_after_seconds"], 3600);
-        assert_eq!(payload["integrations"], serde_json::json!([]));
-
-        let invalid_date = app
-            .oneshot(
-                Request::post("/api/integrations/refresh-if-stale")
                     .header(header::COOKIE, cookie)
                     .header(header::CONTENT_TYPE, "application/json")
                     .body(Body::from(r#"{"as_of_date":"2026-02-31"}"#))
