@@ -85,6 +85,17 @@ impl SyncCadence {
         }
     }
 
+    /// The cadence's repeat interval; `None` for manual-only synchronization.
+    pub fn period(self) -> Option<Duration> {
+        match self {
+            Self::Hourly => Some(Duration::hours(1)),
+            Self::Every6h => Some(Duration::hours(6)),
+            Self::Every12h => Some(Duration::hours(12)),
+            Self::Daily => Some(Duration::days(1)),
+            Self::Manual => None,
+        }
+    }
+
     /// Most recent deterministic slot at or before `now`. Cron redelivery for
     /// this slot is harmless because `sync_log(connection_slug, scheduled_for)`
     /// is unique. If invocations were absent for multiple slots, the newest
